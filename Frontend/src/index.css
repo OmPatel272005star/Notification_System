@@ -1,0 +1,107 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --brand: #6D5EF5;
+    --brand-light: #8B7CFF;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    font-family: 'Inter', sans-serif;
+  }
+
+  body {
+    @apply antialiased;
+    font-family: 'Inter', sans-serif;
+  }
+}
+
+@layer utilities {
+  /* Scrollbar */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #d1d5db transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar { width: 4px; height: 4px; }
+  .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background-color: #d1d5db; border-radius: 2px; }
+  .dark .scrollbar-thin::-webkit-scrollbar-thumb { background-color: #374151; }
+
+  /* Brand gradient */
+  .brand-gradient { @apply bg-gradient-to-r from-[#6D5EF5] to-[#8B7CFF]; }
+  .brand-gradient-text {
+    @apply bg-gradient-to-r from-[#6D5EF5] to-[#8B7CFF] bg-clip-text text-transparent;
+  }
+  .brand-glow { box-shadow: 0 0 24px rgba(109, 94, 245, 0.35); }
+
+  /* Glass effect */
+  .glass {
+    @apply backdrop-blur-md bg-white/80 dark:bg-[#161B22]/80;
+    border: 1px solid rgba(228, 231, 236, 0.6);
+  }
+  .dark .glass {
+    border: 1px solid rgba(42, 47, 58, 0.6);
+  }
+
+  /* Animations */
+  .animate-fade-in { animation: fadeIn 0.35s ease-out both; }
+  .animate-slide-up { animation: slideUp 0.3s ease-out both; }
+  .animate-slide-in-right { animation: slideInRight 0.3s ease-out both; }
+  .animate-scale-in { animation: scaleIn 0.25s ease-out both; }
+
+  /* Hover lift */
+  .hover-lift {
+    @apply transition-transform duration-200;
+  }
+  .hover-lift:hover { transform: translateY(-2px); }
+}
+
+/* ─── Keyframes ──────────────────────────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to   { background-position: 200% 0; }
+}
+
+/* ─── Skeleton loader ────────────────────────────────────────────────── */
+.skeleton {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+  @apply rounded-lg;
+}
+.dark .skeleton {
+  background: linear-gradient(90deg, #1f2937 25%, #374151 50%, #1f2937 75%);
+  background-size: 200% 100%;
+}
+
+/* ─── Page transition ────────────────────────────────────────────────── */
+.page-enter { animation: fadeIn 0.25s ease-out both; }

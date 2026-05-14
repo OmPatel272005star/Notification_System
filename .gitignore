@@ -1,0 +1,143 @@
+# =========================
+# ROOT .gitignore
+# Scalable_Notification_System
+# =========================
+
+# -------------------------
+# Dependencies
+# -------------------------
+node_modules/
+**/node_modules/
+
+# -------------------------
+# Build folders
+# -------------------------
+dist/
+build/
+.next/
+out/
+coverage/
+storybook-static/
+
+# -------------------------
+# Vite / Next / React
+# -------------------------
+.vite/
+.next/
+.vercel/
+
+# -------------------------
+# Logs
+# -------------------------
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# -------------------------
+# Environment files
+# -------------------------
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+Frontend/.env
+Frontend/.env.local
+
+Backend/.env
+Backend/.env.local
+
+# -------------------------
+# OS files
+# -------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# -------------------------
+# IDE / Editor
+# -------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# -------------------------
+# Runtime files
+# -------------------------
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# -------------------------
+# Cache files
+# -------------------------
+.cache/
+.parcel-cache/
+.eslintcache
+
+# -------------------------
+# Temporary files
+# -------------------------
+tmp/
+temp/
+
+# -------------------------
+# Package manager locks
+# Uncomment if needed
+# -------------------------
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# -------------------------
+# Testing
+# -------------------------
+coverage/
+.nyc_output/
+
+# -------------------------
+# TypeScript
+# -------------------------
+*.tsbuildinfo
+
+# -------------------------
+# Tailwind / PostCSS cache
+# -------------------------
+.tailwindcss/
+
+# -------------------------
+# Uploads / Generated files
+# -------------------------
+uploads/
+generated/
+exports/
+
+# -------------------------
+# MongoDB
+# -------------------------
+*.mongodb
+
+# -------------------------
+# Mac hidden files
+# -------------------------
+.AppleDouble
+.LSOverride
+
+# -------------------------
+# Linux hidden files
+# -------------------------
+*~
+
+# -------------------------
+# Misc
+# -------------------------
+*.pem
+*.crt
+*.key
+*.pub
