@@ -3,10 +3,14 @@
     "version": "1.0.0",
     "private": true,
     "dependencies": {
+        "@grapesjs/react": "^2.0.0",
+        "grapesjs": "^0.22.16",
+        "grapesjs-blocks-basic": "^1.0.2",
+        "grapesjs-preset-newsletter": "^1.0.2",
+        "lucide-react": "^0.383.0",
         "react": "^18.2.0",
         "react-dom": "^18.2.0",
-        "react-router-dom": "^6.22.0",
-        "lucide-react": "^0.383.0"
+        "react-router-dom": "^6.22.0"
     },
     "devDependencies": {
         "@vitejs/plugin-react": "^4.2.1",

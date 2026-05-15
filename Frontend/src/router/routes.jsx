@@ -8,6 +8,7 @@ import SignupPage from '../pages/auth/SignupPage';
 import HomePage from '../pages/dashboard/HomePage';
 import AudiencePage from '../pages/dashboard/AudiencePage';
 import TemplatePage from '../pages/dashboard/TemplatePage';
+import TemplateEditorPage from '../pages/dashboard/TemplateEditorPage';
 import CampaignPage from '../pages/dashboard/CampaignPage';
 import ConnectionPage from '../pages/dashboard/ConnectionPage';
 import UsersPage from '../pages/dashboard/UsersPage';
@@ -27,6 +28,11 @@ export const routes = [
   {
     path: '/signup',
     element: <SignupPage />,
+  },
+  // ── Standalone full-page editor (no sidebar) ──
+  {
+    path: '/templates/editor/:id',
+    element: <TemplateEditorPage />,
   },
   {
     path: '/',
