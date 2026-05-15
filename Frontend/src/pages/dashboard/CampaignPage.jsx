@@ -1,141 +1,378 @@
-import { useState } from "react";
-import { Search, Plus, Mail, Trash2, BarChart2, Filter, FileText } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Search, Plus, MoreVertical, Trash2, Edit3, Eye, X, AlertTriangle, Mail, MessageSquare, Smartphone, Bell, Radio, Layers, Globe, MessageCircle } from "lucide-react";
 import { useToast } from "../../hooks/useToast";
+import { CampaignWizard } from "./CampaignWizard";
 
-const STATUS_CFG = {
-  Completed: { cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400", dot: "bg-emerald-500" },
-  Sending:   { cls: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-400", dot: "bg-purple-500" },
-  Scheduled: { cls: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400", dot: "bg-amber-500" },
-  Draft:     { cls: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400", dot: "bg-gray-400" },
-  Failed:    { cls: "bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400", dot: "bg-red-500" },
+const TYPE_ICONS = {
+  Email: Mail, WhatsApp: MessageCircle, SMS: MessageSquare,
+  "In-App Messaging": Bell, "Mobile Push": Smartphone,
+  RCS: Radio, MMS: Layers, "Web Push": Globe,
 };
 
-const INIT_DATA = [
-  { id: 1, name: "Welcome Series", audience: 1250, template: "Welcome Email", status: "Completed", sentTime: "Jan 15, 2026", openRate: "32%", clickRate: "8%" },
-  { id: 2, name: "Spring Promo", audience: 5000, template: "Promotion", status: "Sending", sentTime: "May 10, 2026", openRate: "28%", clickRate: "6%" },
-  { id: 3, name: "May Newsletter", audience: 8100, template: "Newsletter v3", status: "Completed", sentTime: "May 8, 2026", openRate: "34%", clickRate: "9%" },
-  { id: 4, name: "Product Announcement", audience: 12000, template: "Product Launch", status: "Scheduled", sentTime: "May 20, 2026", openRate: "—", clickRate: "—" },
-  { id: 5, name: "Re-engagement Q1", audience: 3400, template: "Newsletter v2", status: "Failed", sentTime: "Apr 2, 2026", openRate: "—", clickRate: "—" },
-  { id: 6, name: "Summer Campaign", audience: 0, template: "Promo Basic", status: "Draft", sentTime: "—", openRate: "—", clickRate: "—" },
+const TYPE_COLORS = {
+  Email: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400",
+  WhatsApp: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-400",
+  SMS: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400",
+  "In-App Messaging": "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-400",
+  "Mobile Push": "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-400",
+  RCS: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400",
+  MMS: "bg-pink-100 text-pink-700 dark:bg-pink-900/40 dark:text-pink-400",
+  "Web Push": "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
+};
+
+const STATUS_CFG = {
+  Draft:     { cls: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",         dot: "bg-gray-400" },
+  Scheduled: { cls: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400",   dot: "bg-amber-500" },
+  Published: { cls: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400",   dot: "bg-green-500" },
+  Sending:   { cls: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-400", dot: "bg-purple-500" },
+  Completed: { cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400", dot: "bg-emerald-500" },
+  Failed:    { cls: "bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400",           dot: "bg-red-500" },
+};
+
+const SCHED_CFG = {
+  "Not Scheduled": "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400",
+  Scheduled:       "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400",
+  Completed:       "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400",
+};
+
+const INIT_CAMPAIGNS = [
+  { id: "1", name: "Welcome Email Series", description: "Onboarding emails for new subscribers", type: "Email", status: "Completed", scheduleType: "One Time", scheduleStatus: "Completed", createdAt: "2026-05-10" },
+  { id: "2", name: "Spring WhatsApp Promo", description: "Seasonal offer blasted via WhatsApp", type: "WhatsApp", status: "Published", scheduleType: "One Time", scheduleStatus: "Completed", createdAt: "2026-05-08" },
+  { id: "3", name: "May Newsletter", description: "Monthly digest with latest platform updates", type: "Email", status: "Sending", scheduleType: "One Time", scheduleStatus: "Scheduled", createdAt: "2026-05-08" },
+  { id: "4", name: "SMS Flash Sale", description: "SMS_testing_14_5_v1", type: "SMS", status: "Scheduled", scheduleType: "One Time", scheduleStatus: "Scheduled", createdAt: "2026-05-06" },
+  { id: "5", name: "Web Push Announcement", description: "This is description", type: "Web Push", status: "Draft", scheduleType: "—", scheduleStatus: "Not Scheduled", createdAt: "2026-05-05" },
+  { id: "6", name: "RCS Product Launch", description: "Interactive RCS cards for product reveal", type: "RCS", status: "Failed", scheduleType: "One Time", scheduleStatus: "Completed", createdAt: "2026-05-03" },
 ];
 
-const STEPS = ["Details", "Audience", "Template", "Schedule", "Review"];
+/* ── Three-dot row menu ── */
+function RowMenu({ onEdit, onView, onDelete, onPublishDetails, onPublish }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, right: 0 });
+  const btnRef = useRef(null);
+  const menuRef = useRef(null);
 
-function Modal({ open, onClose, children }) {
+  useEffect(() => {
+    if (!open) return;
+    const h = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target) && btnRef.current && !btnRef.current.contains(e.target))
+        setOpen(false);
+    };
+    document.addEventListener("click", h, true);
+    return () => document.removeEventListener("click", h, true);
+  }, [open]);
+
+  const handleOpen = (e) => {
+    e.stopPropagation();
+    const rect = btnRef.current.getBoundingClientRect();
+    setPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    setOpen(o => !o);
+  };
+
+  const act = (fn) => (e) => { e.stopPropagation(); setOpen(false); fn(); };
+
+  return (
+    <>
+      <button ref={btnRef} onClick={handleOpen}
+        className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+        <MoreVertical className="w-4 h-4" />
+      </button>
+      {open && (
+        <div ref={menuRef} style={{ position: "fixed", top: pos.top, right: pos.right, zIndex: 9999 }}
+          className="w-52 bg-white dark:bg-[#161B22] border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-xl shadow-xl py-1 text-sm">
+          <button onMouseDown={act(onView)} className="flex items-center gap-2.5 w-full px-4 py-2.5 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#1A2030] transition-colors">
+            <Eye className="w-3.5 h-3.5" /> View
+          </button>
+          <button onMouseDown={act(onEdit)} className="flex items-center gap-2.5 w-full px-4 py-2.5 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#1A2030] transition-colors">
+            <Edit3 className="w-3.5 h-3.5" /> Edit
+          </button>
+          {onPublishDetails && (
+            <button onMouseDown={act(onPublishDetails)} className="flex items-center gap-2.5 w-full px-4 py-2.5 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-colors">
+              📅 Set Publish Details
+            </button>
+          )}
+          {onPublish && (
+            <button onMouseDown={act(onPublish)} className="flex items-center gap-2.5 w-full px-4 py-2.5 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-950/20 transition-colors">
+              🚀 Publish
+            </button>
+          )}
+          <div className="my-1 border-t border-gray-100 dark:border-[#2A2F3A]" />
+          <button onMouseDown={act(onDelete)} className="flex items-center gap-2.5 w-full px-4 py-2.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors">
+            <Trash2 className="w-3.5 h-3.5" /> Delete
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ── Delete confirm dialog ── */
+function DeleteDialog({ open, onClose, onConfirm, name }) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-      <div className="relative bg-white dark:bg-[#161B22] rounded-2xl border border-[#E4E7EC] dark:border-[#2A2F3A] shadow-2xl w-full max-w-lg animate-scale-in" onClick={e => e.stopPropagation()}>
-        {children}
+      <div className="relative bg-white dark:bg-[#161B22] rounded-2xl border border-[#E4E7EC] dark:border-[#2A2F3A] shadow-2xl w-full max-w-sm p-6 text-center space-y-4" onClick={e => e.stopPropagation()}>
+        <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-950/40 flex items-center justify-center mx-auto">
+          <AlertTriangle className="w-6 h-6 text-red-500" />
+        </div>
+        <div>
+          <h2 className="font-semibold text-gray-900 dark:text-gray-100">Confirm Deletion</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1.5">
+            Are you sure you want to delete <span className="font-medium text-gray-700 dark:text-gray-200">{name}</span>?
+          </p>
+        </div>
+        <div className="flex gap-3">
+          <button onClick={onClose} className="flex-1 py-2.5 text-sm border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-xl text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+            Cancel
+          </button>
+          <button onClick={onConfirm} className="flex-1 py-2.5 text-sm bg-red-500 hover:bg-red-600 text-white rounded-xl font-medium transition-colors">
+            Remove Campaign
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
-const inputCls = "w-full px-3 py-2 text-sm rounded-xl border border-[#E4E7EC] dark:border-[#2A2F3A] bg-[#F7F8FC] dark:bg-[#0F1117] text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#6D5EF5] transition-all";
+/* ── Publish Details Dialog (Phase 5) ── */
+function PublishDialog({ open, onClose, onConfirm }) {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const todayStr = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+  const timeStr = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
 
+  const [date, setDate] = useState(todayStr);
+  const [time, setTime] = useState(timeStr);
+  const [sendBest, setSendBest] = useState(false);
+  const [custTz, setCustTz] = useState(false);
+
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div className="relative bg-white dark:bg-[#161B22] rounded-2xl border border-[#E4E7EC] dark:border-[#2A2F3A] shadow-2xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="px-6 pt-5 pb-4 border-b border-[#E4E7EC] dark:border-[#2A2F3A] flex items-start justify-between">
+          <div>
+            <h2 className="font-semibold text-gray-900 dark:text-gray-100">Set Publish Details</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Select a type of trigger for your campaign.</p>
+          </div>
+          <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        {/* Body */}
+        <div className="p-6 space-y-5">
+          {/* Trigger type */}
+          <div>
+            <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Trigger Type</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl border-2 border-[#6D5EF5] bg-[#6D5EF5]/8 dark:bg-[#6D5EF5]/10 cursor-pointer">
+                <div className="w-4 h-4 rounded-full border-2 border-[#6D5EF5] flex items-center justify-center">
+                  <div className="w-2 h-2 rounded-full bg-[#6D5EF5]" />
+                </div>
+                <span className="text-sm font-semibold text-[#6D5EF5]">Time-Based</span>
+              </div>
+              <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl border-2 border-[#E4E7EC] dark:border-[#2A2F3A] opacity-50 cursor-not-allowed">
+                <div className="w-4 h-4 rounded-full border-2 border-gray-300 dark:border-gray-600" />
+                <span className="text-sm font-medium text-gray-500">Event-Based</span>
+              </div>
+            </div>
+          </div>
+          {/* Recurrence */}
+          <div>
+            <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Recurrence</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl border-2 border-[#6D5EF5] bg-[#6D5EF5]/8 dark:bg-[#6D5EF5]/10 cursor-pointer">
+                <div className="w-4 h-4 rounded-full border-2 border-[#6D5EF5] flex items-center justify-center">
+                  <div className="w-2 h-2 rounded-full bg-[#6D5EF5]" />
+                </div>
+                <span className="text-sm font-semibold text-[#6D5EF5]">One Time</span>
+              </div>
+              <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl border-2 border-[#E4E7EC] dark:border-[#2A2F3A] opacity-50 cursor-not-allowed">
+                <div className="w-4 h-4 rounded-full border-2 border-gray-300 dark:border-gray-600" />
+                <span className="text-sm font-medium text-gray-500">Periodic</span>
+              </div>
+            </div>
+          </div>
+          {/* Date + Time */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Date</p>
+              <div className="relative">
+                <input type="date" value={date} onChange={e => setDate(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2.5 text-sm rounded-xl border border-[#E4E7EC] dark:border-[#2A2F3A] bg-[#F7F8FC] dark:bg-[#0F1117] text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-[#6D5EF5] transition-all" />
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">📅</span>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Time</p>
+              <div className="relative">
+                <input type="time" value={time} onChange={e => setTime(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2.5 text-sm rounded-xl border border-[#E4E7EC] dark:border-[#2A2F3A] bg-[#F7F8FC] dark:bg-[#0F1117] text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-[#6D5EF5] transition-all" />
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🕐</span>
+              </div>
+            </div>
+          </div>
+          {/* Checkboxes */}
+          <div className="space-y-2.5">
+            {[{label:"Send at Best Time",v:sendBest,set:setSendBest},{label:"Use Customer Timezone",v:custTz,set:setCustTz}].map(({label,v,set:s})=>(
+              <label key={label} className="flex items-center gap-2.5 cursor-pointer">
+                <input type="checkbox" checked={v} onChange={e=>s(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 text-[#6D5EF5] focus:ring-[#6D5EF5]" />
+                <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-[#E4E7EC] dark:border-[#2A2F3A] flex gap-3">
+          <button onClick={onClose} className="flex-1 py-2.5 text-sm border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-xl text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors font-medium">Cancel</button>
+          <button onClick={() => onConfirm({ date, time, scheduleType: "One Time" })}
+            className="flex-1 py-2.5 text-sm bg-gradient-to-r from-[#6D5EF5] to-[#8B7CFF] text-white rounded-xl font-semibold hover:shadow-lg hover:shadow-[#6D5EF5]/30 transition-all">Confirm</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Main Page ── */
 export default function CampaignPage() {
   const { addToast } = useToast();
-  const [campaigns, setCampaigns] = useState(INIT_DATA);
+  const [campaigns, setCampaigns] = useState(INIT_CAMPAIGNS);
   const [search, setSearch] = useState("");
-  const [filterStatus, setFilterStatus] = useState("All");
-  const [showCreate, setShowCreate] = useState(false);
-  const [step, setStep] = useState(1);
-  const [form, setForm] = useState({ name: "", subject: "", senderName: "MailFlow", senderEmail: "noreply@mailflow.io" });
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [showWizard, setShowWizard] = useState(false);
+  const [publishTarget, setPublishTarget] = useState(null);
 
-  const filtered = campaigns.filter(c =>
-    (filterStatus === "All" || c.status === filterStatus) &&
-    c.name.toLowerCase().includes(search.toLowerCase())
-  );
-
-  const handleDelete = (id) => { setCampaigns(p => p.filter(c => c.id !== id)); addToast("Campaign deleted", "success"); };
-
-  const handleFinish = () => {
-    if (!form.name.trim()) { addToast("Campaign name required", "error"); return; }
-    setCampaigns(p => [{ id: Date.now(), name: form.name, audience: 0, template: "Draft", status: "Draft", sentTime: "—", openRate: "—", clickRate: "—" }, ...p]);
-    setShowCreate(false); setStep(1);
-    setForm({ name: "", subject: "", senderName: "MailFlow", senderEmail: "noreply@mailflow.io" });
-    addToast("Campaign created as draft", "success");
+  const handleWizardSave = (campaign) => {
+    setCampaigns(p => [campaign, ...p]);
+    addToast(`"${campaign.name}" created as draft`, "success");
   };
 
+  const handleSchedule = ({ date, time, scheduleType }) => {
+    setCampaigns(p => p.map(c => c.id === publishTarget.id
+      ? { ...c, status: "Scheduled", scheduleType, scheduleStatus: "Scheduled", scheduledAt: `${date}T${time}` }
+      : c
+    ));
+    addToast(`Scheduled for ${date} at ${time}`, "success");
+    setPublishTarget(null);
+  };
+
+  const handlePublish = (id) => {
+    setCampaigns(p => p.map(c => c.id === id
+      ? { ...c, status: "Published", scheduleStatus: "Completed" }
+      : c
+    ));
+    addToast("Campaign published! 🎉", "success");
+  };
+
+  const filtered = campaigns.filter(c =>
+    c.name.toLowerCase().includes(search.toLowerCase()) ||
+    c.description.toLowerCase().includes(search.toLowerCase()) ||
+    c.type.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const handleDelete = () => {
+    setCampaigns(p => p.filter(c => c.id !== deleteTarget.id));
+    addToast(`"${deleteTarget.name}" deleted`, "success");
+    setDeleteTarget(null);
+  };
+
+  const thCls = "px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap";
+  const tdCls = "px-4 py-4 text-sm";
+
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex items-start justify-between">
+    <div className="space-y-5 animate-fade-in">
+      {/* Header */}
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Campaigns</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{campaigns.length} campaigns total</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{campaigns.length} total</p>
         </div>
-        <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#6D5EF5] to-[#8B7CFF] text-white text-sm font-medium rounded-xl hover:shadow-lg hover:shadow-[#6D5EF5]/30 hover:-translate-y-0.5 transition-all">
-          <Plus className="w-4 h-4" /> New Campaign
+        <button
+          onClick={() => setShowWizard(true)}
+          className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-[#6D5EF5] to-[#8B7CFF] text-white text-sm font-medium rounded-xl hover:shadow-lg hover:shadow-[#6D5EF5]/30 hover:-translate-y-0.5 transition-all">
+          <Plus className="w-4 h-4" /> Add New
         </button>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[["Total", campaigns.length, "text-gray-900 dark:text-gray-100"], ["Completed", campaigns.filter(c => c.status === "Completed").length, "text-emerald-600"], ["Scheduled", campaigns.filter(c => c.status === "Scheduled").length, "text-amber-600"], ["Drafts", campaigns.filter(c => c.status === "Draft").length, "text-gray-500"]].map(([l, v, cls]) => (
-          <div key={l} className="bg-white dark:bg-[#161B22] border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-xl p-4 text-center">
-            <p className={`text-2xl font-bold ${cls}`}>{v}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{l}</p>
-          </div>
-        ))}
+      {/* Search */}
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+        <input type="text" placeholder="Search campaigns..." value={search} onChange={e => setSearch(e.target.value)}
+          className="w-full pl-9 pr-4 py-2.5 text-sm rounded-xl border border-[#E4E7EC] dark:border-[#2A2F3A] bg-white dark:bg-[#161B22] text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#6D5EF5] transition-all" />
       </div>
 
-      {/* Toolbar */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input type="text" placeholder="Search campaigns..." value={search} onChange={e => setSearch(e.target.value)} className="w-full pl-10 pr-4 py-2.5 text-sm rounded-xl border border-[#E4E7EC] dark:border-[#2A2F3A] bg-white dark:bg-[#161B22] text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#6D5EF5] transition-all" />
-        </div>
-        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="px-3 py-2.5 text-sm rounded-xl border border-[#E4E7EC] dark:border-[#2A2F3A] bg-white dark:bg-[#161B22] text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-[#6D5EF5]">
-          {["All", "Draft", "Scheduled", "Sending", "Completed", "Failed"].map(s => <option key={s}>{s}</option>)}
-        </select>
-      </div>
-
+      {/* Table */}
       {filtered.length > 0 ? (
         <div className="bg-white dark:bg-[#161B22] border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full">
               <thead className="bg-gray-50 dark:bg-[#1A2030] border-b border-[#E4E7EC] dark:border-[#2A2F3A]">
                 <tr>
-                  {["Campaign", "Status", "Audience", "Template", "Sent Date", "Open Rate", "Click Rate", ""].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
-                  ))}
+                  <th className={thCls}>Name</th>
+                  <th className={thCls}>Description</th>
+                  <th className={thCls}>Channel Type</th>
+                  <th className={thCls}>Status</th>
+                  <th className={thCls}>Schedule Type</th>
+                  <th className={thCls}>Schedule Status</th>
+                  <th className="px-4 py-3 w-10" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E4E7EC] dark:divide-[#2A2F3A]">
                 {filtered.map(c => {
-                  const cfg = STATUS_CFG[c.status] || STATUS_CFG.Draft;
+                  const Icon = TYPE_ICONS[c.type] || Mail;
+                  const typeColor = TYPE_COLORS[c.type] || TYPE_COLORS["Web Push"];
+                  const statusCfg = STATUS_CFG[c.status] || STATUS_CFG.Draft;
+                  const schedColor = SCHED_CFG[c.scheduleStatus] || SCHED_CFG["Not Scheduled"];
                   return (
                     <tr key={c.id} className="hover:bg-gray-50 dark:hover:bg-[#1A2030] transition-colors group">
-                      <td className="px-4 py-4">
+                      {/* Name */}
+                      <td className={tdCls}>
                         <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 bg-[#6D5EF5]/10 rounded-lg flex items-center justify-center">
-                            <Mail className="w-4 h-4 text-[#6D5EF5]" />
+                          <div className="w-8 h-8 rounded-lg bg-[#6D5EF5]/10 flex items-center justify-center flex-shrink-0">
+                            <Icon className="w-4 h-4 text-[#6D5EF5]" />
                           </div>
-                          <span className="text-sm font-medium text-gray-900 dark:text-gray-100 whitespace-nowrap">{c.name}</span>
+                          <span className="font-semibold text-gray-900 dark:text-gray-100 whitespace-nowrap">{c.name}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-4">
-                        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${cfg.cls}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />{c.status}
+                      {/* Description */}
+                      <td className={tdCls + " text-gray-500 dark:text-gray-400 max-w-[200px]"}>
+                        <span className="truncate block max-w-[200px]">{c.description}</span>
+                      </td>
+                      {/* Channel Type */}
+                      <td className={tdCls}>
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${typeColor}`}>
+                          {c.type}
                         </span>
                       </td>
-                      <td className="px-4 py-4 text-sm text-gray-700 dark:text-gray-300">{c.audience > 0 ? c.audience.toLocaleString() : "—"}</td>
-                      <td className="px-4 py-4 text-sm text-gray-600 dark:text-gray-400">{c.template}</td>
-                      <td className="px-4 py-4 text-sm text-gray-500 whitespace-nowrap">{c.sentTime}</td>
-                      <td className="px-4 py-4">
-                        <div className="flex items-center gap-2">
-                          {c.openRate !== "—" && <div className="w-14 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full"><div className="h-full bg-emerald-500 rounded-full" style={{ width: c.openRate }} /></div>}
-                          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{c.openRate}</span>
-                        </div>
+                      {/* Status */}
+                      <td className={tdCls}>
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${statusCfg.cls}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${statusCfg.dot}`} />
+                          {c.status}
+                        </span>
                       </td>
-                      <td className="px-4 py-4 text-sm font-medium text-gray-700 dark:text-gray-300">{c.clickRate}</td>
-                      <td className="px-4 py-4">
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => addToast("Analytics coming soon", "info")} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 hover:text-gray-600 transition-colors"><BarChart2 className="w-4 h-4" /></button>
-                          <button onClick={() => handleDelete(c.id)} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 text-gray-400 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
-                        </div>
+                      {/* Schedule Type */}
+                      <td className={tdCls + " text-gray-600 dark:text-gray-400 whitespace-nowrap"}>
+                        {c.scheduleType}
+                      </td>
+                      {/* Schedule Status */}
+                      <td className={tdCls}>
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${schedColor}`}>
+                          {c.scheduleStatus}
+                        </span>
+                      </td>
+                      {/* Actions */}
+                      <td className="px-4 py-4 text-right">
+                        <RowMenu
+                          onView={() => addToast(`Viewing "${c.name}"`, "info")}
+                          onEdit={() => addToast("Edit coming in Phase 7", "info")}
+                          onDelete={() => setDeleteTarget(c)}
+                          onPublishDetails={c.status === "Draft" ? () => setPublishTarget(c) : null}
+                          onPublish={c.status === "Scheduled" ? () => handlePublish(c.id) : null}
+                        />
                       </td>
                     </tr>
                   );
@@ -143,84 +380,46 @@ export default function CampaignPage() {
               </tbody>
             </table>
           </div>
+          <div className="px-5 py-3 border-t border-[#E4E7EC] dark:border-[#2A2F3A] text-xs text-gray-400">
+            Showing {filtered.length} of {campaigns.length} campaigns
+          </div>
         </div>
       ) : (
-        <div className="bg-white dark:bg-[#161B22] border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-xl py-20 flex flex-col items-center gap-4">
-          <div className="w-16 h-16 bg-[#6D5EF5]/10 rounded-2xl flex items-center justify-center">
-            <Mail className="w-8 h-8 text-[#6D5EF5]" />
+        <div className="bg-white dark:bg-[#161B22] border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-2xl py-20 flex flex-col items-center gap-4">
+          <div className="w-14 h-14 bg-[#6D5EF5]/10 rounded-2xl flex items-center justify-center">
+            <Mail className="w-7 h-7 text-[#6D5EF5]" />
           </div>
           <h3 className="font-semibold text-gray-700 dark:text-gray-300">No campaigns found</h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Create your first campaign to reach your audience</p>
-          <button onClick={() => setShowCreate(true)} className="px-4 py-2 bg-gradient-to-r from-[#6D5EF5] to-[#8B7CFF] text-white text-sm rounded-xl hover:shadow-lg hover:-translate-y-0.5 transition-all font-medium">New Campaign</button>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            {search ? "Try a different search term." : "Create your first campaign to reach your audience."}
+          </p>
+          {!search && (
+            <button onClick={() => setShowWizard(true)}
+              className="px-4 py-2 bg-gradient-to-r from-[#6D5EF5] to-[#8B7CFF] text-white text-sm font-medium rounded-xl hover:shadow-lg hover:-translate-y-0.5 transition-all">
+              Add New Campaign
+            </button>
+          )}
         </div>
       )}
 
-      {/* Create Modal */}
-      <Modal open={showCreate} onClose={() => { setShowCreate(false); setStep(1); }}>
-        <div className="px-6 pt-5 pb-3 border-b border-[#E4E7EC] dark:border-[#2A2F3A]">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <h2 className="font-semibold text-gray-900 dark:text-gray-100">New Campaign</h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Step {step} of {STEPS.length} — {STEPS[step-1]}</p>
-            </div>
-            <button onClick={() => { setShowCreate(false); setStep(1); }} className="text-gray-400 hover:text-gray-600 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-lg">×</button>
-          </div>
-          <div className="flex gap-1">
-            {STEPS.map((_, i) => <div key={i} className={`h-1 flex-1 rounded-full ${i < step ? "bg-[#6D5EF5]" : "bg-gray-200 dark:bg-gray-700"}`} />)}
-          </div>
-        </div>
-        <div className="p-6 space-y-4">
-          {step === 1 && <>
-            {[["name","Campaign Name *","text","e.g. May Newsletter"],["subject","Subject Line","text","Your monthly update is here"],["senderName","Sender Name","text","MailFlow"],["senderEmail","Sender Email","email","noreply@mailflow.io"]].map(([k,l,t,ph]) => (
-              <div key={k}>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{l}</label>
-                <input type={t} placeholder={ph} value={form[k]} onChange={e => setForm({...form,[k]:e.target.value})} className={inputCls} />
-              </div>
-            ))}
-          </>}
-          {step === 2 && <div className="space-y-2">
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">Choose your target audience</p>
-            {["All Subscribers (12,450)","Newsletter subscribers (8,200)","Premium users (2,100)"].map(o => (
-              <label key={o} className="flex items-center gap-3 p-3 rounded-xl border border-[#E4E7EC] dark:border-[#2A2F3A] hover:border-[#6D5EF5]/40 cursor-pointer">
-                <input type="radio" name="aud" className="text-[#6D5EF5]" />
-                <span className="text-sm text-gray-700 dark:text-gray-300">{o}</span>
-              </label>
-            ))}
-          </div>}
-          {step === 3 && <div className="grid grid-cols-2 gap-3">
-            {["Welcome Email","Newsletter v3","Product Launch","Promo Basic"].map(t => (
-              <label key={t} className="flex flex-col p-3 rounded-xl border border-[#E4E7EC] dark:border-[#2A2F3A] hover:border-[#6D5EF5]/40 cursor-pointer">
-                <div className="h-14 bg-gray-100 dark:bg-gray-800 rounded-lg mb-2 flex items-center justify-center"><FileText className="w-5 h-5 text-gray-400" /></div>
-                <input type="radio" name="tpl" className="sr-only" />
-                <span className="text-xs font-medium text-gray-700 dark:text-gray-300 text-center">{t}</span>
-              </label>
-            ))}
-          </div>}
-          {step === 4 && <div className="space-y-3">
-            {["Send Now","Schedule for Later"].map(o => (
-              <label key={o} className="flex items-center gap-3 p-3 rounded-xl border border-[#E4E7EC] dark:border-[#2A2F3A] hover:border-[#6D5EF5]/40 cursor-pointer">
-                <input type="radio" name="sched" className="text-[#6D5EF5]" />
-                <span className="text-sm text-gray-700 dark:text-gray-300">{o}</span>
-              </label>
-            ))}
-            <input type="datetime-local" className={inputCls} />
-          </div>}
-          {step === 5 && <div className="bg-[#6D5EF5]/5 dark:bg-[#6D5EF5]/10 border border-[#6D5EF5]/20 rounded-xl p-4 space-y-2">
-            {[["Campaign", form.name || "Untitled"],["Subject", form.subject || "—"],["Sender", `${form.senderName} <${form.senderEmail}>`],["Audience", "12,450 contacts"],["Spam Score", "1.2 / 10 ✅"]].map(([k,v]) => (
-              <div key={k} className="flex justify-between text-sm">
-                <span className="text-gray-500 dark:text-gray-400">{k}</span>
-                <span className="font-medium text-gray-900 dark:text-gray-100">{v}</span>
-              </div>
-            ))}
-          </div>}
-          <div className="flex gap-3 pt-2">
-            {step > 1 && <button onClick={() => setStep(s => s-1)} className="flex-1 py-2 text-sm border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-xl text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">← Back</button>}
-            <button onClick={() => step < STEPS.length ? setStep(s => s+1) : handleFinish()} className="flex-1 py-2 text-sm bg-gradient-to-r from-[#6D5EF5] to-[#8B7CFF] text-white rounded-xl hover:shadow-lg transition-all font-medium">
-              {step === STEPS.length ? "🚀 Launch" : "Continue →"}
-            </button>
-          </div>
-        </div>
-      </Modal>
+      <DeleteDialog
+        open={Boolean(deleteTarget)}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDelete}
+        name={deleteTarget?.name}
+      />
+
+      <CampaignWizard
+        open={showWizard}
+        onClose={() => setShowWizard(false)}
+        onSave={handleWizardSave}
+      />
+
+      <PublishDialog
+        open={Boolean(publishTarget)}
+        onClose={() => setPublishTarget(null)}
+        onConfirm={handleSchedule}
+      />
     </div>
   );
 }
