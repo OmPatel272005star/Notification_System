@@ -11,7 +11,7 @@ export default function MainLayout() {
   if (!user) return <Navigate to="/login" replace />;
 
   return (
-    <div className="flex h-screen bg-[#F7F8FC] dark:bg-[#0F1117] overflow-hidden">
+    <div className="flex h-screen bg-[#F7F8FC] dark:bg-[#0F1117]">
       <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} />
       <div
         className="flex flex-col flex-1 min-w-0 transition-all duration-300"
