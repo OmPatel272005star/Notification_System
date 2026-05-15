@@ -10,7 +10,7 @@ const PAGE_TITLES = {
   "/templates": "Templates",
   "/campaigns": "Campaigns",
   "/connections": "Connections",
-  "/users": "Team Members",
+  "/users": "Users",
   "/settings": "Settings",
 };
 

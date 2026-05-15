@@ -1,229 +1,511 @@
-import { useState } from "react";
-import { Plus, Trash2, RefreshCw, ExternalLink, Plug, CheckCircle, AlertTriangle, XCircle } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import {
+  Search, Plus, MoreVertical, Trash2, Edit3, Eye, X, Plug,
+  AlertTriangle, CheckCircle,
+} from "lucide-react";
 import { useToast } from "../../hooks/useToast";
 
+// ── Provider config ───────────────────────────────────────────────────────────
 const PROVIDERS = [
-  { id: "resend", name: "Resend", desc: "Modern email API for developers", color: "bg-black dark:bg-white", textColor: "text-white dark:text-black", letter: "R" },
-  { id: "sendgrid", name: "SendGrid", desc: "Cloud-based email delivery service", color: "bg-[#1A82E2]", textColor: "text-white", letter: "SG" },
-  { id: "mailgun", name: "Mailgun", desc: "Email API for developers", color: "bg-[#F06B26]", textColor: "text-white", letter: "MG" },
-  { id: "ses", name: "AWS SES", desc: "Amazon Simple Email Service", color: "bg-[#FF9900]", textColor: "text-white", letter: "SES" },
-  { id: "smtp", name: "Custom SMTP", desc: "Connect any SMTP server", color: "bg-gray-700", textColor: "text-white", letter: "⚙" },
+  { id: "resend",    name: "Resend",       bg: "bg-black dark:bg-gray-800",  letter: "R" },
+  { id: "sendgrid",  name: "SendGrid",     bg: "bg-[#1A82E2]",               letter: "SG" },
+  { id: "mailgun",   name: "Mailgun",      bg: "bg-[#F06B26]",               letter: "MG" },
+  { id: "ses",       name: "AWS SES",      bg: "bg-[#FF9900]",               letter: "SES" },
+  { id: "smtp",      name: "Custom SMTP",  bg: "bg-gray-600",                letter: "⚙" },
 ];
+
+const PROV_MAP = Object.fromEntries(PROVIDERS.map(p => [p.name, p]));
 
 const INIT_CONNECTIONS = [
-  { id: 1, provider: "Resend", email: "noreply@mailflow.io", status: "Connected", lastSync: "May 14, 2026", messagesDay: "2,400/day" },
-  { id: 2, provider: "SendGrid", email: "team@mailflow.io", status: "Connected", lastSync: "May 13, 2026", messagesDay: "10,000/day" },
-  { id: 3, provider: "AWS SES", email: "alerts@mailflow.io", status: "Warning", lastSync: "May 10, 2026", messagesDay: "50,000/day" },
+  { id: 1, name: "Primary Mailer",    provider: "Resend",      senderEmail: "noreply@mailflow.io",  senderName: "MailFlow",  apiKey: "re_••••••••" },
+  { id: 2, name: "Marketing Emails",  provider: "SendGrid",    senderEmail: "team@mailflow.io",     senderName: "MailFlow Team", apiKey: "SG.••••••••" },
+  { id: 3, name: "Transactional",     provider: "AWS SES",     senderEmail: "alerts@mailflow.io",   senderName: "MailFlow Alerts", apiKey: "AKIA••••••••" },
 ];
 
-const STATUS_CFG = {
-  Connected: { cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400", dot: "bg-emerald-500", icon: CheckCircle, iconCls: "text-emerald-500" },
-  Warning:   { cls: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400", dot: "bg-amber-500", icon: AlertTriangle, iconCls: "text-amber-500" },
-  Failed:    { cls: "bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400", dot: "bg-red-500", icon: XCircle, iconCls: "text-red-500" },
-};
+// ── Shared input style ────────────────────────────────────────────────────────
+const inputCls =
+  "w-full px-3 py-2.5 text-sm rounded-xl border border-[#E4E7EC] dark:border-[#2A2F3A] bg-[#F7F8FC] dark:bg-[#0F1117] text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#6D5EF5] transition-all";
 
-const PROV_COLORS = {
-  Resend: "bg-black dark:bg-gray-800",
-  SendGrid: "bg-[#1A82E2]",
-  "AWS SES": "bg-[#FF9900]",
-  Mailgun: "bg-[#F06B26]",
-  "Custom SMTP": "bg-gray-600",
-};
-const PROV_LETTERS = { Resend: "R", SendGrid: "SG", "AWS SES": "SES", Mailgun: "MG", "Custom SMTP": "⚙" };
-
-function Modal({ open, onClose, children }) {
+// ── Modal wrapper ─────────────────────────────────────────────────────────────
+function Modal({ open, onClose, children, wide }) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-      <div className="relative bg-white dark:bg-[#161B22] rounded-2xl border border-[#E4E7EC] dark:border-[#2A2F3A] shadow-2xl w-full max-w-md animate-scale-in" onClick={e => e.stopPropagation()}>
+      <div
+        className={`relative bg-white dark:bg-[#161B22] rounded-2xl border border-[#E4E7EC] dark:border-[#2A2F3A] shadow-2xl w-full animate-scale-in ${wide ? "max-w-lg" : "max-w-md"}`}
+        onClick={e => e.stopPropagation()}
+      >
         {children}
       </div>
     </div>
   );
 }
 
-const inputCls = "w-full px-3 py-2 text-sm rounded-xl border border-[#E4E7EC] dark:border-[#2A2F3A] bg-[#F7F8FC] dark:bg-[#0F1117] text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#6D5EF5] transition-all";
+// ── Provider avatar ───────────────────────────────────────────────────────────
+function ProvAvatar({ provider, size = "sm" }) {
+  const cfg = PROV_MAP[provider] || { bg: "bg-gray-500", letter: "?" };
+  const sz = size === "sm" ? "w-8 h-8 text-xs" : "w-10 h-10 text-sm";
+  return (
+    <div className={`${sz} ${cfg.bg} rounded-xl flex items-center justify-center text-white font-bold flex-shrink-0`}>
+      {cfg.letter}
+    </div>
+  );
+}
 
-export default function ConnectionPage() {
-  const { addToast } = useToast();
-  const [connections, setConnections] = useState(INIT_CONNECTIONS);
-  const [showAdd, setShowAdd] = useState(false);
-  const [selectedProv, setSelectedProv] = useState(null);
-  const [apiKey, setApiKey] = useState("");
-  const [senderEmail, setSenderEmail] = useState("");
+// ── Three-dot row menu ────────────────────────────────────────────────────────
+function RowMenu({ conn, onView, onEdit, onDelete }) {
+  const [open, setOpen] = useState(false);
+  const [openUp, setOpenUp] = useState(false);
+  const ref = useRef(null);
+  const btnRef = useRef(null);
 
-  const handleDisconnect = (id) => {
-    setConnections(p => p.filter(c => c.id !== id));
-    addToast("Connection removed", "success");
-  };
+  useEffect(() => {
+    if (!open) return;
+    function handler(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
 
-  const handleTest = (name) => addToast(`Testing ${name} connection...`, "info");
-
-  const handleConnect = () => {
-    if (!selectedProv) { addToast("Select a provider", "error"); return; }
-    if (!apiKey.trim() && selectedProv.id !== "smtp") { addToast("API key required", "error"); return; }
-    const nc = { id: Date.now(), provider: selectedProv.name, email: senderEmail || "noreply@example.com", status: "Connected", lastSync: new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}), messagesDay: "1,000/day" };
-    setConnections(p => [...p, nc]);
-    setShowAdd(false); setSelectedProv(null); setApiKey(""); setSenderEmail("");
-    addToast(`${selectedProv.name} connected successfully`, "success");
+  const handleToggle = () => {
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setOpenUp(window.innerHeight - rect.bottom < 150);
+    }
+    setOpen(v => !v);
   };
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Email Connections</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Connect your email sending providers</p>
+    <div className="relative" ref={ref}>
+      <button
+        ref={btnRef}
+        onClick={handleToggle}
+        className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+        aria-label="Connection actions"
+      >
+        <MoreVertical className="w-4 h-4" />
+      </button>
+
+      {open && (
+        <div className={`absolute right-0 z-50 w-40 bg-white dark:bg-[#1A2030] border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-xl shadow-xl overflow-hidden animate-fade-in ${openUp ? "bottom-8" : "top-8"}`}>
+          {/* View */}
+          <button
+            onClick={() => { setOpen(false); onView(conn); }}
+            className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#222B3A] transition-colors"
+          >
+            <Eye className="w-3.5 h-3.5" /> View
+          </button>
+
+          {/* Edit */}
+          <button
+            onClick={() => { setOpen(false); onEdit(conn); }}
+            className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#222B3A] transition-colors"
+          >
+            <Edit3 className="w-3.5 h-3.5" /> Edit
+          </button>
+
+          {/* Divider */}
+          <div className="border-t border-[#E4E7EC] dark:border-[#2A2F3A]" />
+
+          {/* Delete */}
+          <button
+            onClick={() => { setOpen(false); onDelete(conn); }}
+            className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors"
+          >
+            <Trash2 className="w-3.5 h-3.5" /> Delete
+          </button>
         </div>
-        <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#6D5EF5] to-[#8B7CFF] text-white text-sm font-medium rounded-xl hover:shadow-lg hover:shadow-[#6D5EF5]/30 hover:-translate-y-0.5 transition-all">
+      )}
+    </div>
+  );
+}
+
+// ── Add / Edit form dialog ────────────────────────────────────────────────────
+function ConnectionFormDialog({ open, onClose, onSave, initial }) {
+  const isEdit = Boolean(initial);
+  const blank = { name: "", provider: "Resend", apiKey: "", senderEmail: "", senderName: "" };
+  const [form, setForm] = useState(blank);
+
+  useEffect(() => {
+    if (open) setForm(initial ? { name: initial.name, provider: initial.provider, apiKey: initial.apiKey || "", senderEmail: initial.senderEmail, senderName: initial.senderName } : blank);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initial]);
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  return (
+    <Modal open={open} onClose={onClose} wide>
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-[#E4E7EC] dark:border-[#2A2F3A]">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#6D5EF5] to-[#8B7CFF] flex items-center justify-center shadow-lg shadow-[#6D5EF5]/20">
+            <Plug className="w-4 h-4 text-white" />
+          </div>
+          <div>
+            <h2 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">
+              {isEdit ? "Edit Connection" : "Add Connection"}
+            </h2>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {isEdit ? "Update your connection details." : "Configure a new email provider connection."}
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={onClose}
+          className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Body */}
+      <div className="p-6 space-y-4">
+
+        {/* Provider */}
+        <div>
+          <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+            Provider <span className="text-red-400">*</span>
+          </label>
+          <select
+            value={form.provider}
+            onChange={e => set("provider", e.target.value)}
+            className={inputCls}
+          >
+            {PROVIDERS.map(p => (
+              <option key={p.id} value={p.name}>{p.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Connection Name */}
+        <div>
+          <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+            Connection Name <span className="text-red-400">*</span>
+          </label>
+          <input
+            type="text"
+            placeholder="e.g. Primary Mailer"
+            value={form.name}
+            onChange={e => set("name", e.target.value)}
+            className={inputCls}
+          />
+        </div>
+
+        {/* API Key */}
+        <div>
+          <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+            API Key <span className="text-red-400">*</span>
+          </label>
+          <input
+            type="password"
+            placeholder="Enter your API key"
+            value={form.apiKey}
+            onChange={e => set("apiKey", e.target.value)}
+            className={inputCls}
+            autoComplete="new-password"
+          />
+        </div>
+
+        {/* Sender Name + Sender Email side by side */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+              Sender Name <span className="text-red-400">*</span>
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. MailFlow"
+              value={form.senderName}
+              onChange={e => set("senderName", e.target.value)}
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+              Sender Email <span className="text-red-400">*</span>
+            </label>
+            <input
+              type="email"
+              placeholder="noreply@company.com"
+              value={form.senderEmail}
+              onChange={e => set("senderEmail", e.target.value)}
+              className={inputCls}
+            />
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-3 pt-1">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2.5 text-sm border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-xl text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onSave(form)}
+            className="flex-1 py-2.5 text-sm bg-gradient-to-r from-[#6D5EF5] to-[#8B7CFF] text-white rounded-xl hover:shadow-lg hover:shadow-[#6D5EF5]/30 transition-all font-medium"
+          >
+            {isEdit ? "Save Changes" : "Add Connection"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ── View dialog ───────────────────────────────────────────────────────────────
+function ViewDialog({ open, onClose, conn }) {
+  if (!conn) return null;
+  const rows = [
+    ["Connection Name", conn.name],
+    ["Provider", conn.provider],
+    ["Sender Name", conn.senderName],
+    ["Sender Email", conn.senderEmail],
+    ["API Key", conn.apiKey],
+  ];
+  return (
+    <Modal open={open} onClose={onClose}>
+      <div className="flex items-center justify-between px-6 py-4 border-b border-[#E4E7EC] dark:border-[#2A2F3A]">
+        <div className="flex items-center gap-3">
+          <ProvAvatar provider={conn.provider} size="md" />
+          <div>
+            <h2 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">{conn.name}</h2>
+            <p className="text-xs text-gray-400 mt-0.5">{conn.provider}</p>
+          </div>
+        </div>
+        <button
+          onClick={onClose}
+          className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+      <div className="p-6 space-y-3">
+        {rows.map(([label, value]) => (
+          <div key={label} className="flex items-center justify-between py-2 border-b border-[#E4E7EC] dark:border-[#2A2F3A] last:border-0">
+            <span className="text-xs font-medium text-gray-500 dark:text-gray-400">{label}</span>
+            <span className="text-sm text-gray-800 dark:text-gray-200 font-medium max-w-[200px] truncate text-right">{value}</span>
+          </div>
+        ))}
+        <button
+          onClick={onClose}
+          className="w-full mt-2 py-2.5 text-sm border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-xl text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+        >
+          Close
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+// ── Delete confirmation dialog ────────────────────────────────────────────────
+function DeleteDialog({ open, onClose, onConfirm, conn }) {
+  return (
+    <Modal open={open} onClose={onClose}>
+      <div className="p-6 text-center space-y-4">
+        <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-950/40 flex items-center justify-center mx-auto">
+          <AlertTriangle className="w-6 h-6 text-red-500" />
+        </div>
+        <div>
+          <h2 className="font-semibold text-gray-900 dark:text-gray-100">Delete Connection</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1.5">
+            Are you sure you want to delete{" "}
+            <span className="font-medium text-gray-700 dark:text-gray-200">{conn?.name}</span>?
+            This action cannot be undone.
+          </p>
+        </div>
+        <div className="flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2.5 text-sm border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-xl text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="flex-1 py-2.5 text-sm bg-red-500 hover:bg-red-600 text-white rounded-xl transition-colors font-medium"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
+export default function ConnectionPage() {
+  const { addToast } = useToast();
+  const [connections, setConnections] = useState(INIT_CONNECTIONS);
+  const [search, setSearch] = useState("");
+
+  const [showAdd, setShowAdd]           = useState(false);
+  const [editTarget, setEditTarget]     = useState(null);
+  const [viewTarget, setViewTarget]     = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+
+  const filtered = connections.filter(c =>
+    c.name.toLowerCase().includes(search.toLowerCase()) ||
+    c.provider.toLowerCase().includes(search.toLowerCase()) ||
+    c.senderEmail.toLowerCase().includes(search.toLowerCase())
+  );
+
+  // ── handlers ─────────────────────────────────────────────────────────────
+  const handleAdd = (form) => {
+    if (!form.name.trim())        { addToast("Connection name is required", "error"); return; }
+    if (!form.apiKey.trim())      { addToast("API key is required", "error"); return; }
+    if (!form.senderEmail.includes("@")) { addToast("Valid sender email required", "error"); return; }
+    if (!form.senderName.trim())  { addToast("Sender name is required", "error"); return; }
+    const nc = { id: Date.now(), ...form };
+    setConnections(p => [...p, nc]);
+    setShowAdd(false);
+    addToast(`Connection "${form.name}" added`, "success");
+  };
+
+  const handleEdit = (form) => {
+    setConnections(p => p.map(c => c.id === editTarget.id ? { ...c, ...form } : c));
+    setEditTarget(null);
+    addToast("Connection updated", "success");
+  };
+
+  const handleDelete = () => {
+    setConnections(p => p.filter(c => c.id !== deleteTarget.id));
+    addToast(`"${deleteTarget.name}" deleted`, "success");
+    setDeleteTarget(null);
+  };
+
+  // ── render ────────────────────────────────────────────────────────────────
+  return (
+    <div className="space-y-5 animate-fade-in">
+
+      {/* Page header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Connections</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+            {connections.length} connection{connections.length !== 1 ? "s" : ""} configured
+          </p>
+        </div>
+        <button
+          onClick={() => setShowAdd(true)}
+          className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-[#6D5EF5] to-[#8B7CFF] text-white text-sm font-medium rounded-xl hover:shadow-lg hover:shadow-[#6D5EF5]/30 hover:-translate-y-0.5 transition-all"
+        >
           <Plus className="w-4 h-4" /> Add Connection
         </button>
       </div>
 
-      {/* Health overview */}
-      <div className="grid grid-cols-3 gap-3">
-        {[
-          ["Healthy", connections.filter(c => c.status === "Connected").length, "text-emerald-600 dark:text-emerald-400", "bg-emerald-50 dark:bg-emerald-950/40"],
-          ["Warnings", connections.filter(c => c.status === "Warning").length, "text-amber-600 dark:text-amber-400", "bg-amber-50 dark:bg-amber-950/40"],
-          ["Failed", connections.filter(c => c.status === "Failed").length, "text-red-600 dark:text-red-400", "bg-red-50 dark:bg-red-950/40"],
-        ].map(([l, v, tc, bg]) => (
-          <div key={l} className={`${bg} border border-transparent rounded-xl p-4 text-center`}>
-            <p className={`text-2xl font-bold ${tc}`}>{v}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{l}</p>
-          </div>
-        ))}
+      {/* Search */}
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+        <input
+          type="text"
+          placeholder="Search connections..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="w-full pl-9 pr-4 py-2.5 text-sm rounded-xl border border-[#E4E7EC] dark:border-[#2A2F3A] bg-white dark:bg-[#161B22] text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#6D5EF5] transition-all"
+        />
       </div>
 
-      {/* Connection cards */}
-      {connections.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {connections.map(conn => {
-            const cfg = STATUS_CFG[conn.status] || STATUS_CFG.Connected;
-            const StatusIcon = cfg.icon;
-            const provBg = PROV_COLORS[conn.provider] || "bg-gray-600";
-            const letter = PROV_LETTERS[conn.provider] || "?";
-            return (
-              <div key={conn.id} className="bg-white dark:bg-[#161B22] border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-2xl p-5 hover:shadow-md transition-shadow group">
-                <div className="flex items-start justify-between mb-4">
+      {/* Table */}
+      <div className="bg-white dark:bg-[#161B22] border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-xl">
+        <table className="min-w-full" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
+          <thead className="bg-gray-50 dark:bg-[#1A2030] border-b border-[#E4E7EC] dark:border-[#2A2F3A]">
+            <tr>
+              {["Name", "Email", "Connection Source", ""].map((h, i, arr) => (
+                <th
+                  key={h}
+                  className={`px-5 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ${
+                    i === 0 ? "rounded-tl-xl" : i === arr.length - 1 ? "rounded-tr-xl" : ""
+                  }`}
+                >
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#E4E7EC] dark:divide-[#2A2F3A]">
+            {filtered.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="px-5 py-16 text-center">
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-[#6D5EF5]/10 flex items-center justify-center">
+                      <Plug className="w-6 h-6 text-[#6D5EF5]" />
+                    </div>
+                    <p className="text-sm text-gray-400">
+                      {search ? "No connections match your search." : "No connections yet. Add your first one."}
+                    </p>
+                  </div>
+                </td>
+              </tr>
+            ) : filtered.map(conn => (
+              <tr key={conn.id} className="hover:bg-gray-50 dark:hover:bg-[#1A2030] transition-colors">
+
+                {/* Name */}
+                <td className="px-5 py-4">
                   <div className="flex items-center gap-3">
-                    <div className={`w-11 h-11 ${provBg} rounded-xl flex items-center justify-center text-white font-bold text-xs flex-shrink-0`}>
-                      {letter}
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">{conn.provider}</h3>
-                      <p className="text-xs text-gray-400 truncate max-w-[140px]">{conn.email}</p>
-                    </div>
+                    <ProvAvatar provider={conn.provider} />
+                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{conn.name}</span>
                   </div>
-                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${cfg.cls}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />{conn.status}
+                </td>
+
+                {/* Sender Email */}
+                <td className="px-5 py-4">
+                  <span className="text-sm text-gray-500 dark:text-gray-400">{conn.senderEmail}</span>
+                </td>
+
+                {/* Provider / Connection Source */}
+                <td className="px-5 py-4">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#6D5EF5]/10 text-[#6D5EF5] dark:bg-[#6D5EF5]/20 dark:text-[#8B7CFF]">
+                    {conn.provider}
                   </span>
-                </div>
+                </td>
 
-                {/* Health indicator bar */}
-                <div className="mb-4">
-                  <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
-                    <span>API Health</span>
-                    <StatusIcon className={`w-3.5 h-3.5 ${cfg.iconCls}`} />
-                  </div>
-                  <div className="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full">
-                    <div className={`h-full rounded-full ${conn.status === "Connected" ? "bg-emerald-500 w-full" : conn.status === "Warning" ? "bg-amber-500 w-3/4" : "bg-red-500 w-1/4"}`} />
-                  </div>
-                </div>
-
-                <div className="space-y-1.5 mb-4">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-gray-400">Send limit</span>
-                    <span className="text-gray-600 dark:text-gray-300 font-medium">{conn.messagesDay}</span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-gray-400">Last sync</span>
-                    <span className="text-gray-600 dark:text-gray-300">{conn.lastSync}</span>
-                  </div>
-                </div>
-
-                <div className="flex gap-2">
-                  <button onClick={() => handleTest(conn.provider)} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-                    <RefreshCw className="w-3 h-3" /> Test
-                  </button>
-                  <button onClick={() => addToast("Settings coming soon", "info")} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-                    <ExternalLink className="w-3 h-3" /> Settings
-                  </button>
-                  <button onClick={() => handleDisconnect(conn.id)} className="py-1.5 px-2 text-xs border border-red-200 dark:border-red-900/50 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors">
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-          {/* Add more card */}
-          <button onClick={() => setShowAdd(true)} className="border-2 border-dashed border-[#E4E7EC] dark:border-[#2A2F3A] rounded-2xl p-5 flex flex-col items-center justify-center gap-3 text-gray-400 hover:border-[#6D5EF5]/50 hover:text-[#6D5EF5] transition-all group min-h-[200px]">
-            <div className="w-12 h-12 border-2 border-dashed border-current rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
-              <Plus className="w-5 h-5" />
-            </div>
-            <span className="text-sm font-medium">Add Provider</span>
-          </button>
-        </div>
-      ) : (
-        <div className="bg-white dark:bg-[#161B22] border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-xl py-20 flex flex-col items-center gap-4">
-          <div className="w-16 h-16 bg-[#6D5EF5]/10 rounded-2xl flex items-center justify-center">
-            <Plug className="w-8 h-8 text-[#6D5EF5]" />
-          </div>
-          <h3 className="font-semibold text-gray-700 dark:text-gray-300">No connections yet</h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Connect your email provider to start sending</p>
-          <button onClick={() => setShowAdd(true)} className="px-4 py-2 bg-gradient-to-r from-[#6D5EF5] to-[#8B7CFF] text-white text-sm rounded-xl hover:shadow-lg hover:-translate-y-0.5 transition-all font-medium">Add Connection</button>
-        </div>
-      )}
-
-      {/* Add Connection Modal */}
-      <Modal open={showAdd} onClose={() => { setShowAdd(false); setSelectedProv(null); }}>
-        <div className="px-6 py-4 border-b border-[#E4E7EC] dark:border-[#2A2F3A] flex items-center justify-between">
-          <h2 className="font-semibold text-gray-900 dark:text-gray-100">Add Email Connection</h2>
-          <button onClick={() => setShowAdd(false)} className="text-gray-400 hover:text-gray-600 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-lg">×</button>
-        </div>
-        <div className="p-6 space-y-4">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Choose your email provider</p>
-          <div className="grid grid-cols-1 gap-2">
-            {PROVIDERS.map(p => (
-              <button key={p.id} onClick={() => setSelectedProv(p)} className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${selectedProv?.id === p.id ? "border-[#6D5EF5] bg-[#6D5EF5]/5 dark:bg-[#6D5EF5]/10" : "border-[#E4E7EC] dark:border-[#2A2F3A] hover:border-[#6D5EF5]/40"}`}>
-                <div className={`w-9 h-9 ${p.color} rounded-lg flex items-center justify-center ${p.textColor} font-bold text-xs flex-shrink-0`}>{p.letter}</div>
-                <div>
-                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{p.name}</p>
-                  <p className="text-xs text-gray-400">{p.desc}</p>
-                </div>
-                {selectedProv?.id === p.id && <CheckCircle className="w-4 h-4 text-[#6D5EF5] ml-auto" />}
-              </button>
+                {/* Three-dot menu */}
+                <td className="px-5 py-4 text-right">
+                  <RowMenu
+                    conn={conn}
+                    onView={setViewTarget}
+                    onEdit={setEditTarget}
+                    onDelete={setDeleteTarget}
+                  />
+                </td>
+              </tr>
             ))}
-          </div>
-          {selectedProv && (
-            <div className="space-y-3 pt-2 border-t border-[#E4E7EC] dark:border-[#2A2F3A]">
-              {selectedProv.id !== "smtp" ? (
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">API Key *</label>
-                  <input type="password" placeholder="Enter your API key" value={apiKey} onChange={e => setApiKey(e.target.value)} className={inputCls} />
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {[["Host","smtp.example.com"],["Port","587"],["Username","user@example.com"],["Password","••••••••"]].map(([l, ph]) => (
-                    <div key={l}>
-                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{l}</label>
-                      <input placeholder={ph} className={inputCls} />
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Sender Email</label>
-                <input type="email" placeholder="noreply@yourdomain.com" value={senderEmail} onChange={e => setSenderEmail(e.target.value)} className={inputCls} />
-              </div>
-            </div>
-          )}
-          <div className="flex gap-3 pt-2">
-            <button onClick={() => setShowAdd(false)} className="flex-1 py-2 text-sm border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-xl text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancel</button>
-            <button onClick={handleConnect} className="flex-1 py-2 text-sm bg-gradient-to-r from-[#6D5EF5] to-[#8B7CFF] text-white rounded-xl hover:shadow-lg transition-all font-medium">Connect</button>
-          </div>
-        </div>
-      </Modal>
+          </tbody>
+        </table>
+      </div>
+
+      {/* Add Connection Dialog */}
+      <ConnectionFormDialog
+        open={showAdd}
+        onClose={() => setShowAdd(false)}
+        onSave={handleAdd}
+        initial={null}
+      />
+
+      {/* Edit Connection Dialog */}
+      <ConnectionFormDialog
+        open={Boolean(editTarget)}
+        onClose={() => setEditTarget(null)}
+        onSave={handleEdit}
+        initial={editTarget}
+      />
+
+      {/* View Dialog */}
+      <ViewDialog
+        open={Boolean(viewTarget)}
+        onClose={() => setViewTarget(null)}
+        conn={viewTarget}
+      />
+
+      {/* Delete Confirmation */}
+      <DeleteDialog
+        open={Boolean(deleteTarget)}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDelete}
+        conn={deleteTarget}
+      />
     </div>
   );
 }

@@ -9,7 +9,7 @@ const NAV_ITEMS = [
   { path: "/templates", label: "Templates", icon: FileText },
   { path: "/campaigns", label: "Campaigns", icon: Mail },
   { path: "/connections", label: "Connections", icon: Plug },
-  { path: "/users", label: "Team", icon: UserCog },
+  { path: "/users", label: "Users", icon: UserCog },
 ];
 
 export default function Sidebar({ collapsed, setCollapsed }) {
