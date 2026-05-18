@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
 import { Search, Bell, Sun, Moon, ChevronDown, User, Settings, LogOut, CreditCard, Activity } from "lucide-react";
+import EditProfileModal from "../ui/EditProfileModal";
 
 const PAGE_TITLES = {
   "/home": "Dashboard",
@@ -22,6 +23,7 @@ export default function Navbar() {
   const [showProfile, setShowProfile] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [searchVal, setSearchVal] = useState("");
+  const [showEditProfile, setShowEditProfile] = useState(false);
   const profileRef = useRef();
   const searchRef = useRef();
 
@@ -39,22 +41,21 @@ export default function Navbar() {
   const handleLogout = () => { logout(); navigate("/login"); };
 
   const profileItems = [
-    { icon: User, label: "My Profile", action: () => {} },
-    { icon: Settings, label: "Account Settings", action: () => {} },
-    { icon: CreditCard, label: "Billing", action: () => {} },
+    { icon: User, label: "My Profile", action: () => { setShowEditProfile(true); } },
     { icon: Activity, label: "Activity Logs", action: () => {} },
   ];
 
   return (
+    <>
     <header className="h-14 bg-white dark:bg-[#161B22] border-b border-[#E4E7EC] dark:border-[#2A2F3A] flex items-center px-5 gap-4 flex-shrink-0 sticky top-0 z-20">
       {/* Left: breadcrumb / title */}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500 mb-0.5">
+        {/* <div className="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500 mb-0.5">
           <span>MailFlow</span>
-          <span>/</span>
+          <span>/+</span>
           <span className="text-gray-600 dark:text-gray-400 font-medium">{pageTitle}</span>
         </div>
-        <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate hidden sm:block">{pageTitle}</h2>
+        <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate hidden sm:block">{pageTitle}</h2> */}
       </div>
 
       {/* Right: controls */}
@@ -154,5 +155,10 @@ export default function Navbar() {
         </div>
       </div>
     </header>
+
+      {showEditProfile && (
+        <EditProfileModal onClose={() => setShowEditProfile(false)} />
+      )}
+    </>
   );
 }
