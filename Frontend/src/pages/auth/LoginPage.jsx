@@ -6,7 +6,7 @@ import { Eye, EyeOff, Mail, Lock, Zap, Users, BarChart3, ArrowRight } from "luci
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ email: "om@mailflow.io", password: "password" });
+  const [form, setForm] = useState({ email: "", password: "" });
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -14,12 +14,20 @@ export default function LoginPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.email || !form.password) { setError("Please fill all fields."); return; }
+    setError("");
     setLoading(true);
-    setTimeout(() => {
-      login(form.email, form.password);
-      navigate("/home");
+    try {
+      const result = await login(form.email, form.password);
+      if (result.ok) {
+        navigate("/home");
+      } else {
+        setError(result.error || "Login failed. Please try again.");
+      }
+    } catch (err) {
+      setError("Something went wrong. Please try again.");
+    } finally {
       setLoading(false);
-    }, 700);
+    }
   };
 
   const features = [

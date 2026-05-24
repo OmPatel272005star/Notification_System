@@ -14,7 +14,6 @@ const userSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
       index: true,
-      match: [/^\S+@\S+\.\S+$/, "Invalid email format"],
     },
     password_hash: {
       type: String,
@@ -22,7 +21,7 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ["admin","viewer"],
+      enum: ["admin", "viewer"],
       default: "viewer",
       required: true,
     },
@@ -56,11 +55,6 @@ const userSchema = new mongoose.Schema(
       },
       mobile: {
         type: String,
-        required: true,
-        unique: true,
-        minlength: 10,
-        maxlength: 15,
-        match: [/^\+?[1-9]\d{9,14}$/, "Invalid mobile number"],
       },
       profile_picture: {
         type: String,

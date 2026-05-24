@@ -6,9 +6,10 @@ import { Eye, EyeOff, User, Mail, Lock, Building2, Zap, ArrowRight } from "lucid
 export default function SignupPage() {
   const { signup } = useAuth();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ fullName: "", email: "", password: "", confirmPassword: "", companyName: "" });
+  const [form, setForm] = useState({ fullName: "", email: "", password: "", confirmPassword: "" });
   const [showPw, setShowPw] = useState(false);
   const [errors, setErrors] = useState({});
+  const [globalError, setGlobalError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const validate = () => {
@@ -20,16 +21,27 @@ export default function SignupPage() {
     return e;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     const errs = validate();
-    if (Object.keys(errs).length) { setErrors(errs); return; }
+    if (Object.keys(errs).length) {
+      setErrors(errs);
+      return;
+    }
+    setGlobalError("");
     setLoading(true);
-    setTimeout(() => {
-      signup(form);
-      navigate("/home");
+    try {
+      const result = await signup(form.fullName.trim(), form.email, form.password);
+      if (result.ok) {
+        navigate("/home");
+      } else {
+        setGlobalError(result.error || "Signup failed. Please try again.");
+      }
+    } catch (err) {
+      setGlobalError("Something went wrong. Please try again.");
+    } finally {
       setLoading(false);
-    }, 700);
+    }
   };
 
   const field = (key, label, type, placeholder, Icon) => (
@@ -68,10 +80,16 @@ export default function SignupPage() {
           <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-1">Create your account</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Start sending beautiful emails in minutes</p>
 
+          {globalError && (
+            <div className="mb-5 px-4 py-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-sm rounded-xl">
+              {globalError}
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-4">
             {field("fullName", "Full Name", "text", "John Doe", User)}
             {field("email", "Email Address", "email", "you@company.com", Mail)}
-            {field("companyName", "Company Name", "text", "Acme Corp", Building2)}
+            {/* {field("companyName", "Company Name", "text", "Acme Corp", Building2)} */}
 
             {/* Password with toggle */}
             <div>

@@ -1,66 +1,62 @@
-import { Navigate } from 'react-router-dom';
+import { Navigate } from "react-router-dom";
+import ProtectedRoute, { PublicRoute } from "./ProtectedRoute";
 
 // Auth Pages
-import LoginPage from '../pages/auth/LoginPage';
-import SignupPage from '../pages/auth/SignupPage';
+import LoginPage  from "../pages/auth/LoginPage";
+import SignupPage from "../pages/auth/SignupPage";
 
 // Dashboard Pages
-import HomePage from '../pages/dashboard/HomePage';
-import AudiencePage from '../pages/dashboard/AudiencePage';
-import TemplatePage from '../pages/dashboard/TemplatePage';
-import TemplateEditorPage from '../pages/dashboard/TemplateEditorPage';
-import CampaignPage from '../pages/dashboard/CampaignPage';
-import ConnectionPage from '../pages/dashboard/ConnectionPage';
-import UsersPage from '../pages/dashboard/UsersPage';
+import HomePage           from "../pages/dashboard/HomePage";
+import AudiencePage       from "../pages/dashboard/AudiencePage";
+import TemplatePage       from "../pages/dashboard/TemplatePage";
+import TemplateEditorPage from "../pages/dashboard/TemplateEditorPage";
+import CampaignPage       from "../pages/dashboard/CampaignPage";
+import ConnectionPage     from "../pages/dashboard/ConnectionPage";
+import UsersPage          from "../pages/dashboard/UsersPage";
+import ProfilePage        from "../pages/profile/ProfilePage";
 
 // Layout
-import MainLayout from '../components/layout/MainLayout';
+import MainLayout from "../components/layout/MainLayout";
 
 export const routes = [
+  // Root redirect
   {
-    path: '/',
+    path: "/",
     element: <Navigate to="/home" replace />,
   },
+
+  // ── Public-only (redirect to /home if already logged in) ─────────────────
   {
-    path: '/login',
-    element: <LoginPage />,
+    path: "/login",
+    element: <PublicRoute><LoginPage /></PublicRoute>,
   },
   {
-    path: '/signup',
-    element: <SignupPage />,
+    path: "/signup",
+    element: <PublicRoute><SignupPage /></PublicRoute>,
   },
-  // ── Standalone full-page editor (no sidebar) ──
+
+  // ── Protected (redirect to /login if not logged in) ───────────────────────
   {
-    path: '/templates/editor/:id',
-    element: <TemplateEditorPage />,
-  },
-  {
-    path: '/',
-    element: <MainLayout />,
+    element: <ProtectedRoute />,
     children: [
+      // Standalone full-page editor (no sidebar)
       {
-        path: 'home',
-        element: <HomePage />,
+        path: "/templates/editor/:id",
+        element: <TemplateEditorPage />,
       },
+
+      // Dashboard routes wrapped in sidebar/navbar layout
       {
-        path: 'audience',
-        element: <AudiencePage />,
-      },
-      {
-        path: 'templates',
-        element: <TemplatePage />,
-      },
-      {
-        path: 'campaigns',
-        element: <CampaignPage />,
-      },
-      {
-        path: 'connections',
-        element: <ConnectionPage />,
-      },
-      {
-        path: 'users',
-        element: <UsersPage />,
+        element: <MainLayout />,
+        children: [
+          { path: "home",        element: <HomePage />       },
+          { path: "audience",    element: <AudiencePage />   },
+          { path: "templates",   element: <TemplatePage />   },
+          { path: "campaigns",   element: <CampaignPage />   },
+          { path: "connections", element: <ConnectionPage /> },
+          { path: "users",       element: <UsersPage />      },
+          { path: "profile",     element: <ProfilePage />    },
+        ],
       },
     ],
   },

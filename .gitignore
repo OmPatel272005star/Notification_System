@@ -141,3 +141,8 @@ exports/
 *.crt
 *.key
 *.pub
+
+
+Question.txt
+Frontend/random.jsx
+*.md
