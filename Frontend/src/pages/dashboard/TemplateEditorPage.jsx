@@ -66,7 +66,13 @@ export default function TemplateEditorPage() {
       const projectData = editorRef.current.getProjectData();
       const fullHtml = `<style>${css}</style>${html}`;
       const textContent = editorRef.current.getWrapper()?.view?.el?.innerText?.slice(0, 200) || "";
-      updateTemplate(id, { htmlContent: fullHtml, projectData, content: textContent || template?.content });
+      await updateTemplate(id, {
+        content: {
+          html_body: fullHtml,
+          text_preview: textContent,
+          grapesjs_data: projectData,
+        },
+      });
       addToast("Template saved successfully", "success");
     } catch {
       addToast("Failed to save template", "error");
@@ -74,6 +80,7 @@ export default function TemplateEditorPage() {
       setSaving(false);
     }
   };
+
 
   const handleSaveAndExit = async () => {
     await handleSave();

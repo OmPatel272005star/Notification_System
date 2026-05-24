@@ -176,31 +176,37 @@ function TemplateDialog({ open, onClose, initial, initialChannel }) {
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.name.trim()) { addToast("Template name is required", "error"); return; }
-    if (isEdit) {
-      updateTemplate(initial.id, form);
-      addToast("Template updated", "success");
+    try {
+      if (isEdit) {
+        await updateTemplate(initial.id, form);
+        addToast("Template updated", "success");
+      } else {
+        await addTemplate(form);
+        addToast("Template created", "success");
+      }
       onClose();
-    } else {
-      const t = addTemplate(form);
-      addToast("Template created", "success");
-      onClose();
-      return t;
+    } catch (err) {
+      addToast(err.message || "Failed to save template", "error");
     }
   };
 
-  const handleEditTemplate = () => {
+  const handleEditTemplate = async () => {
     if (!form.name.trim()) { addToast("Please enter a name first", "error"); return; }
-    let id = initial?.id;
-    if (!id) {
-      const t = addTemplate(form);
-      id = t.id;
-    } else {
-      updateTemplate(id, form);
+    try {
+      let id = initial?.id;
+      if (!id) {
+        const t = await addTemplate(form);
+        id = t.id;
+      } else {
+        await updateTemplate(id, form);
+      }
+      onClose();
+      navigate(`/templates/editor/${id}`);
+    } catch (err) {
+      addToast(err.message || "Failed to save template", "error");
     }
-    onClose();
-    navigate(`/templates/editor/${id}`);
   };
 
   return (
@@ -330,15 +336,22 @@ export default function TemplatePage() {
   const [editTarget, setEditTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
 
-  const filtered = templates.filter(t =>
-    t.name.toLowerCase().includes(search.toLowerCase()) ||
-    t.channel.toLowerCase().includes(search.toLowerCase())
+  const safeTemplates = Array.isArray(templates) ? templates : [];
+  const filtered = safeTemplates.filter(t =>
+    (t.name || '').toLowerCase().includes(search.toLowerCase()) ||
+    (t.channel || '').toLowerCase().includes(search.toLowerCase())
   );
 
   const handleAddNew = (ch) => { setDialogChannel(ch); setEditTarget(null); setDialogOpen(true); };
   const handleEdit = (t) => { setEditTarget(t); setDialogOpen(true); };
-  const handleDuplicate = (id) => { duplicateTemplate(id); addToast("Template duplicated", "success"); };
-  const handleDelete = () => { deleteTemplate(deleteTarget.id); addToast("Template deleted", "success"); setDeleteTarget(null); };
+  const handleDuplicate = async (id) => {
+    try { await duplicateTemplate(id); addToast("Template duplicated", "success"); }
+    catch (err) { addToast(err.message || "Failed to duplicate", "error"); }
+  };
+  const handleDelete = async () => {
+    try { await deleteTemplate(deleteTarget.id); addToast("Template deleted", "success"); setDeleteTarget(null); }
+    catch (err) { addToast(err.message || "Failed to delete", "error"); }
+  };
 
   return (
     <div className="space-y-5 animate-fade-in">
@@ -346,7 +359,7 @@ export default function TemplatePage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Templates</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{templates.length} template{templates.length !== 1 ? "s" : ""}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{safeTemplates.length} template{safeTemplates.length !== 1 ? "s" : ""}</p>
         </div>
         <div className="flex items-center gap-2">
           {/* View toggle */}
