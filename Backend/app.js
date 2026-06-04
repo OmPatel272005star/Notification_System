@@ -7,6 +7,7 @@ import UserRouter     from './src/router/UserRouter.js'
 import ProfileRouter  from './src/router/ProfileRouter.js'
 import TemplateRouter from './src/router/TemplateRouter.js'
 import AudienceRouter from './src/router/AudienceRouter.js'
+import CampaignRouter from './src/router/CampaignRouter.js'
 
 dotenv.config()
 
@@ -32,6 +33,9 @@ app.use('/template', TemplateRouter)
 
 // ── Audience routes (admin only) ──────────────────────────────────────────
 app.use('/audience', AudienceRouter)
+
+// ── Campaign routes (read: any auth user | write: admin only) ─────────────
+app.use('/campaign', CampaignRouter)
 
 app.listen(port, () => {
     console.log(`App is running on port ${port}`)

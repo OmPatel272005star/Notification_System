@@ -2,6 +2,7 @@ import { Navigate, Outlet } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { TemplateProvider } from "../context/TemplateContext";
 import { AudienceProvider } from "../context/AudienceContext";
+import { CampaignProvider } from "../context/CampaignContext";
 
 /**
  * ProtectedRoute — wraps private routes.
@@ -23,7 +24,9 @@ export default function ProtectedRoute() {
   return (
     <TemplateProvider>
       <AudienceProvider>
-        <Outlet />
+        <CampaignProvider>
+          <Outlet />
+        </CampaignProvider>
       </AudienceProvider>
     </TemplateProvider>
   );
