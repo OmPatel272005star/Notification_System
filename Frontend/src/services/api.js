@@ -21,11 +21,23 @@ export const apiCall = async (endpoint, options = {}) => {
   try {
     const response = await fetch(url, { ...options, headers });
 
-    // Global 401 handler — token expired or invalid
+    // Global 401 handler — token expired or invalid.
+    // Only redirect if:
+    //   1. There actually was a token (i.e. a session expired, not an unauth request from a public page)
+    //   2. We are not already on /login or /signup (prevents infinite reload loops)
     if (response.status === 401) {
+      const hadToken = Boolean(localStorage.getItem("token"));
+      const onAuthPage = ["/login", "/signup"].some((p) =>
+        window.location.pathname.startsWith(p)
+      );
+
       localStorage.removeItem("token");
       localStorage.removeItem("auth_user");
-      window.location.href = "/login";
+
+      if (hadToken && !onAuthPage) {
+        window.location.href = "/login";
+      }
+      // Either way, stop processing — return undefined so callers get no data.
       return;
     }
 

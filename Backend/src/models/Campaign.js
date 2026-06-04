@@ -1,88 +1,110 @@
-import mongoose from 'mongoose'
+import mongoose from 'mongoose';
 
-const campaignSchema = new mongoose.Schema({
+const { Schema, model } = mongoose;
+
+const campaignSchema = new Schema(
+  {
+    // ── Identity ──────────────────────────────────────────────────────────────
     name: {
-        type: String,
-        required: true,
-        trim: true
+      type: String,
+      required: true,
+      trim: true,
     },
     description: {
-        type: String,
-        trim: true
+      type: String,
+      trim: true,
+      default: '',
     },
-    channel_type: Enum[               // determines which delivery worker picks this up
-        "email", "sms", "whatsapp"
-    ],
+    channel_type: {
+      type: String,
+      enum: ['email', 'sms', 'whatsapp', 'in_app', 'mobile_push', 'rcs', 'mms', 'web_push'],
+      required: true,
+    },
+
+    // ── Publish state ─────────────────────────────────────────────────────────
     status: {
-        type: String,
-        enum: [
-            'draft',
-            'approved',
-            'scheduled',
-            'processing',
-            'completed',
-            'failed',
-            'cancelled'
-        ],
-        default: 'draft'
+      type: String,
+      enum: ['draft', 'published'],
+      default: 'draft',
+    },
+
+    // ── Schedule ──────────────────────────────────────────────────────────────
+    schedule_type: {
+      type: String,
+      enum: ['one_time', 'periodic'],
+      default: 'one_time',
+    },
+    schedule_status: {
+      type: String,
+      enum: ['not_scheduled', 'scheduled', 'completed', 'live'],
+      default: 'not_scheduled',
+    },
+
+    // publish_details: only scheduled_at (ISO) and published_at
+    publish_details: {
+      scheduled_at: { type: Date },   // ISO datetime set by admin — campaign fires at this exact time
+      published_at:  { type: Date },  // timestamp of when admin clicked the final Publish button
+    },
+
+    // ── Content ───────────────────────────────────────────────────────────────
+    template_id: {
+      type: Schema.Types.ObjectId,
+      ref: 'Template',
+      default: null,
     },
     connection_id: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Connection',
-        required: true
+      type: Schema.Types.ObjectId,
+      ref: 'Connection',
+      default: null,
     },
-    template_id: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Template',
-        required: true
+
+    // Email-specific content settings (no reply_to per design)
+    email_settings: {
+      sender_name: { type: String, trim: true, default: '' },
+      subject:     { type: String, trim: true, default: '' },
     },
-    audience: {
-        audience_ids: [
-            {
-                type: mongoose.Schema.Types.ObjectId,
-                ref: 'Audience'
-            }
-        ],
-        schedule: {
-            send_at: {
-                type: Date
-            },
-        },
-        delivery_stats: {
 
-            sent: {
-                type: Number,
-                default: 0
-            },
+    // ── Audience ──────────────────────────────────────────────────────────────
+    audience_ids: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: 'Audience',
+      },
+    ],
 
-            delivered: {
-                type: Number,
-                default: 0
-            },
+    // ── Access control ────────────────────────────────────────────────────────
+    // Arrays of user _id strings.
+    // The special string 'all' means every platform user.
+    // Populated from GET /user/getBulkUser + a fixed "All Users" option in the UI.
+    visible_to:  { type: [String], default: ['all'] },
+    editable_by: { type: [String], default: ['admin'] },
 
-            opened: {
-                type: Number,
-                default: 0
-            },
+    // ── Creator ───────────────────────────────────────────────────────────────
+    created_by: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
 
-            clicked: {
-                type: Number,
-                default: 0
-            },
+    // ── Delivery stats (updated by scheduler worker in future scope) ──────────
+    delivery_stats: {
+      sent:      { type: Number, default: 0 },
+      delivered: { type: Number, default: 0 },
+      opened:    { type: Number, default: 0 },
+      clicked:   { type: Number, default: 0 },
+      bounced:   { type: Number, default: 0 },
+      failed:    { type: Number, default: 0 },
+    },
+  },
+  {
+    timestamps: true, // adds createdAt + updatedAt
+  }
+);
 
-            bounced: {
-                type: Number,
-                default: 0
-            },
+// Index for fast list queries
+campaignSchema.index({ created_by: 1, status: 1 });
+campaignSchema.index({ schedule_status: 1 });
 
-            failed: {
-                type: Number,
-                default: 0
-            },
-        },
-    }
-});
+const Campaign = model('Campaign', campaignSchema);
 
-const Campaign = mongoose.model('Campaign', campaignSchema)
-
-export default Campaign
+export default Campaign;

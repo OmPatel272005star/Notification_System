@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import { Search, Plus, MoreVertical, X, Check } from "lucide-react";
 import { useToast } from "../../hooks/useToast";
+import { useAudience } from "../../context/AudienceContext";
+import AudienceDetailPanel from "../../components/ui/audience/AudienceDetailPanel";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const CHANNEL_COLORS = {
@@ -32,27 +34,7 @@ function primaryPhone(phones = []) {
   return `${p.phone_code}${p.number}`;
 }
 
-// ── mock data ─────────────────────────────────────────────────────────────────
-const INIT = [
-  {
-    _id: "1",
-    first_name: "Do Not", last_name: "Delete",
-    dob: "1995-08-17", gender: "male",
-    emails: [{ email: "opatel272005@gmail.com", is_primary: true }],
-    phone_numbers: [{ phone_code: "+91", number: "9624477474", is_primary: true }],
-    address: { city: "Gandhinagar", state: "Gujarat", country: "India" },
-    social_media_handles: ["email", "sms"],
-  },
-  {
-    _id: "2",
-    first_name: "Jane", last_name: "Smith",
-    dob: "1990-03-22", gender: "female",
-    emails: [{ email: "jane@example.com", is_primary: true }],
-    phone_numbers: [{ phone_code: "+1", number: "5550001234", is_primary: true }],
-    address: { city: "New York", state: "NY", country: "USA" },
-    social_media_handles: ["whatsapp", "email"],
-  },
-];
+// ── mock data removed ─────────────────────────────────────────────────────────
 
 const EMPTY_FORM = {
   first_name: "", last_name: "", dob: "", gender: "",
@@ -203,14 +185,14 @@ function AddAudienceModal({ open, onClose, onSave, initialData = null }) {
   const handleSave = () => {
     if (!form.first_name.trim() || !form.last_name.trim() || !form.email.trim()) return;
     const entry = {
-      _id: initialData?._id || Date.now().toString(),
       first_name: form.first_name, last_name: form.last_name,
       dob: form.dob, gender: form.gender,
       emails: [{ email: form.email, is_primary: true }],
       phone_numbers: form.number ? [{ phone_code: form.phone_code, number: form.number, is_primary: true }] : [],
       address: { city: form.city, state: form.state, country: form.country },
-      social_media_handles: form.handles,
+      handles: form.handles,
     };
+    if (initialData?._id) entry._id = initialData._id;
     onSave(entry);
     setForm(EMPTY_FORM);
   };
@@ -342,38 +324,52 @@ function AddAudienceModal({ open, onClose, onSave, initialData = null }) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function AudiencePage() {
   const { addToast } = useToast();
-  const [audience, setAudience] = useState(INIT);
+  const { audience, addAudience, updateAudience, removeAudience } = useAudience();
+
   const [search, setSearch] = useState("");
   const [showAdd, setShowAdd] = useState(false);
-  const [editTarget, setEditTarget] = useState(null);   // audience entry being edited
-  const [removeTarget, setRemoveTarget] = useState(null); // { _id, name }
+  const [editTarget, setEditTarget] = useState(null);
+  const [removeTarget, setRemoveTarget] = useState(null);
+  const [viewTarget, setViewTarget] = useState(null);
 
-  const filtered = audience.filter(a => {
+  const filtered = (Array.isArray(audience) ? audience : []).filter(a => {
     const q = search.toLowerCase();
-    const name = `${a.first_name} ${a.last_name}`.toLowerCase();
+    const name = `${a.first_name || ''} ${a.last_name || ''}`.toLowerCase();
     const email = primaryEmail(a.emails).toLowerCase();
     return name.includes(q) || email.includes(q);
   });
 
   // Add new
-  const handleSave = (entry) => {
-    setAudience(prev => [entry, ...prev]);
-    setShowAdd(false);
-    addToast("Audience added successfully", "success");
+  const handleSave = async (entry) => {
+    try {
+      await addAudience(entry);
+      setShowAdd(false);
+      addToast("Audience added successfully", "success");
+    } catch (err) {
+      addToast(err.message || "Failed to add audience", "error");
+    }
   };
 
   // Update existing
-  const handleUpdate = (updated) => {
-    setAudience(prev => prev.map(a => a._id === updated._id ? updated : a));
-    setEditTarget(null);
-    addToast("Audience updated successfully", "success");
+  const handleUpdate = async (updated) => {
+    try {
+      await updateAudience(updated._id, updated);
+      setEditTarget(null);
+      addToast("Audience updated successfully", "success");
+    } catch (err) {
+      addToast(err.message || "Failed to update audience", "error");
+    }
   };
 
   // Delete
-  const handleRemove = () => {
-    setAudience(prev => prev.filter(a => a._id !== removeTarget._id));
-    addToast("Audience removed", "success");
-    setRemoveTarget(null);
+  const handleRemove = async () => {
+    try {
+      await removeAudience(removeTarget._id);
+      addToast("Audience removed", "success");
+      setRemoveTarget(null);
+    } catch (err) {
+      addToast(err.message || "Failed to remove audience", "error");
+    }
   };
 
   const thCls = "px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap";
@@ -467,7 +463,7 @@ export default function AudiencePage() {
                       {/* Three-dot menu */}
                       <td className="px-4 py-3.5 text-right">
                         <ThreeDotMenu
-                          onView={() => addToast(`Viewing ${fullName}`, "info")}
+                          onView={() => setViewTarget(a)}
                           onEdit={() => setEditTarget(a)}
                           onDelete={() => setRemoveTarget({ _id: a._id, name: fullName })}
                         />
@@ -513,6 +509,13 @@ export default function AudiencePage() {
         onClose={() => setRemoveTarget(null)}
         onConfirm={handleRemove}
         name={removeTarget?.name}
+      />
+
+      {/* View Audience Panel */}
+      <AudienceDetailPanel
+        open={!!viewTarget}
+        onClose={() => setViewTarget(null)}
+        audienceId={viewTarget?._id}
       />
     </div>
   );

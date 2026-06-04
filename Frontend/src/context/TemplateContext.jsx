@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { useAuth } from './AuthContext';
 import {
   fetchAllTemplates,
   fetchTemplateById,
@@ -131,9 +132,17 @@ const TemplateContext = createContext(null);
 export function TemplateProvider({ children }) {
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
+  const { isAuthenticated } = useAuth();
 
-  // Load all templates on mount
+  // Load all templates on mount — only when authenticated.
+  // Primary guard: this provider is mounted inside ProtectedRoute.
+  // Secondary guard: the isAuthenticated check below handles edge-cases.
   useEffect(() => {
+    if (!isAuthenticated) {
+      setLoading(false);
+      return;
+    }
+
     const load = async () => {
       try {
         const res = await fetchAllTemplates();
@@ -149,7 +158,7 @@ export function TemplateProvider({ children }) {
       }
     };
     load();
-  }, []);
+  }, [isAuthenticated]);
 
   const getTemplate = useCallback(
     (id) => templates.find((t) => t.id === id || t._id === id),

@@ -1,17 +1,8 @@
-import { getRequest, postRequest, putRequest, deleteRequest } from "./api";
+import { getRequest, postRequest, putRequest, deleteRequest } from "./api.js";
 
-export const audienceService = {
-  getAll: () => getRequest("/audience"),
-  getById: (id) => getRequest(`/audience/${id}`),
-  create: (data) => postRequest("/audience", data),
-  update: (id, data) => putRequest(`/audience/${id}`, data),
-  delete: (id) => deleteRequest(`/audience/${id}`),
-  import: (file) => {
-    const formData = new FormData();
-    formData.append("file", file);
-    return fetch("http://localhost:3000/api/audience/import", {
-      method: "POST",
-      body: formData,
-    });
-  },
-};
+export const fetchAllAudience      = (search) => getRequest(`/audience${search ? `?search=${search}` : ''}`);
+export const fetchAudienceById     = (id)     => getRequest(`/audience/${id}`);
+export const createAudience        = (data)   => postRequest("/audience", data);
+export const updateAudience        = (id, d)  => putRequest(`/audience/${id}`, d);
+export const deleteAudience        = (id)     => deleteRequest(`/audience/${id}`);
+export const fetchAudienceTimeline = (id)     => getRequest(`/audience/${id}/timeline`);

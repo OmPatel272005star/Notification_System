@@ -2,8 +2,9 @@ import { BrowserRouter } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { ToastProvider } from './hooks/useToast';
-import { TemplateProvider } from './context/TemplateContext';
 import AppRouter from './router/AppRouter';
+// NOTE: TemplateProvider & AudienceProvider are mounted inside ProtectedRoute
+// so their data-fetching useEffects only run when the user is authenticated.
 
 export default function App() {
   return (
@@ -11,9 +12,7 @@ export default function App() {
       <BrowserRouter>
         <AuthProvider>
           <ToastProvider>
-            <TemplateProvider>
-              <AppRouter />
-            </TemplateProvider>
+            <AppRouter />
           </ToastProvider>
         </AuthProvider>
       </BrowserRouter>
