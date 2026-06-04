@@ -9,6 +9,7 @@ import TemplateRouter from './src/router/TemplateRouter.js'
 import AudienceRouter from './src/router/AudienceRouter.js'
 import CampaignRouter    from './src/router/CampaignRouter.js'
 import ConnectionRouter  from './src/router/ConnectionRouter.js'
+import { startCampaignScheduler } from './src/workers/campaignScheduler.js'
 
 dotenv.config()
 
@@ -43,4 +44,6 @@ app.use('/connections', ConnectionRouter)
 
 app.listen(port, () => {
     console.log(`App is running on port ${port}`)
+    // Start background scheduler after server is up + DB is connected
+    startCampaignScheduler()
 })
