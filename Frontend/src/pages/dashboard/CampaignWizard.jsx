@@ -2,12 +2,13 @@ import { useState, useEffect, useCallback } from "react";
 import {
   X, Check, Search, Mail, MessageCircle, MessageSquare, Bell,
   Smartphone, Radio, Layers, Globe, ChevronLeft, AlertTriangle,
-  ChevronDown, User, Users,
+  ChevronDown, User, Users, Plug,
 } from "lucide-react";
-import { useTemplates } from "../../context/TemplateContext";
-import { useAudience }  from "../../context/AudienceContext";
+import { useTemplates }   from "../../context/TemplateContext";
+import { useAudience }    from "../../context/AudienceContext";
 import { useCampaigns, toDBChannel } from "../../context/CampaignContext";
-import { getAllUsers } from "../../services/userService";
+import { useConnections } from "../../context/ConnectionContext";
+import { getAllUsers }    from "../../services/userService";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const CHANNELS = [
@@ -19,13 +20,6 @@ const CHANNELS = [
   { name: "RCS",             icon: Radio,         color: "orange" },
   { name: "MMS",             icon: Layers,        color: "pink" },
   { name: "Web Push",        icon: Globe,         color: "gray" },
-];
-
-// Demo connections — real ConnectionRouter will replace this in a future phase
-const DEMO_CONNECTIONS = [
-  { id: "demo_1", name: "Primary Mailer",   email: "noreply@mailflow.io"   },
-  { id: "demo_2", name: "Marketing Team",   email: "marketing@mailflow.io" },
-  { id: "demo_3", name: "Transactional",    email: "alerts@mailflow.io"    },
 ];
 
 const STEPS = ["Type", "Details", "Template", "Settings", "Audience", "Summary"];
@@ -285,9 +279,12 @@ function Step3({ form, set }) {
   );
 }
 
-// ── Step 4: Content Settings ───────────────────────────────────────────────────
+// ── Step 4: Content Settings ──────────────────────────────────────────────
 function Step4({ form, set }) {
   const isEmail = form.type === "Email";
+  const { connections, loading: connLoading } = useConnections();
+  // Only email-channel connections make sense for email campaigns
+  const emailConns = connections;
 
   return (
     <div className="space-y-4">
@@ -298,18 +295,39 @@ function Step4({ form, set }) {
         </p>
       </div>
 
-      {/* Connection / Email ID */}
+      {/* Connection selector — email channel only */}
       {isEmail && (
         <div>
-          <label className={labelCls}>Email ID <span className="text-red-400">*</span></label>
-          <select value={form.connectionId} onChange={e => set("connectionId", e.target.value)}
-            className={inputCls}>
-            <option value="">Select Email ID</option>
-            {DEMO_CONNECTIONS.map(c => (
-              <option key={c.id} value={c.id}>{c.name} &lt;{c.email}&gt;</option>
-            ))}
-          </select>
-          <p className="text-xs text-gray-400 mt-1">Demo connections — real integrations coming soon.</p>
+          <label className={labelCls}>Email Connection <span className="text-red-400">*</span></label>
+          {connLoading ? (
+            <div className={inputCls + " text-gray-400"}>
+              Loading connections…
+            </div>
+          ) : emailConns.length === 0 ? (
+            <div className="rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 px-3 py-3">
+              <p className="text-sm text-amber-700 dark:text-amber-400 flex items-center gap-2">
+                <Plug className="w-4 h-4 flex-shrink-0" />
+                No connections found.{" "}
+                <a href="/connections" target="_blank"
+                  className="underline font-semibold hover:text-amber-800">
+                  Add one on the Connections page.
+                </a>
+              </p>
+            </div>
+          ) : (
+            <select
+              value={form.connectionId}
+              onChange={e => set("connectionId", e.target.value)}
+              className={inputCls}
+            >
+              <option value="">Select a connection…</option>
+              {emailConns.map(c => (
+                <option key={c._id} value={c._id}>
+                  {c.name} &lt;{c.email}&gt;
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       )}
 
@@ -415,9 +433,10 @@ function Step5({ form, set }) {
   );
 }
 
-// ── Step 6: Summary ────────────────────────────────────────────────────────────
+// ── Step 6: Summary ────────────────────────────────────────────────────
 function Step6({ form }) {
-  const conn = DEMO_CONNECTIONS.find(c => c.id === form.connectionId);
+  const { connections } = useConnections();
+  const conn = connections.find(c => c._id === form.connectionId || c.id === form.connectionId);
 
   const rows = [
     ["Campaign Type",   form.type || "—"],
@@ -498,7 +517,7 @@ const BLANK = {
   visibleTo:    ["all"],
   editableBy:   ["admin"],
   template:     null,
-  connectionId: "demo_1",
+  connectionId: "",   // empty string — user must pick a real connection
   senderName:   "",
   subject:      "",
   audience:     [],
@@ -525,7 +544,7 @@ export function CampaignWizard({ open, editCampaign, onClose, onSave }) {
         visibleTo:    editCampaign.visibleTo || ["all"],
         editableBy:   editCampaign.editableBy || ["admin"],
         template:     editCampaign.template || null,
-        connectionId: editCampaign.connectionId || "demo_1",
+        connectionId: editCampaign.connectionId || "",
         senderName:   editCampaign.emailSettings?.sender_name || "",
         subject:      editCampaign.emailSettings?.subject || "",
         audience:     editCampaign.audience || [],
@@ -553,8 +572,8 @@ export function CampaignWizard({ open, editCampaign, onClose, onSave }) {
     visible_to:    form.visibleTo,
     editable_by:   form.editableBy,
     template_id:   form.template?._id || form.template?.id || null,
-    // Demo connection IDs are not real ObjectIds — send null until real router exists
-    connection_id: form.connectionId && !form.connectionId.startsWith("demo_") ? form.connectionId : null,
+    // Send real connection ObjectId (empty string becomes null)
+    connection_id: form.connectionId || null,
     email_settings: {
       sender_name: form.senderName,
       subject:     form.subject,

@@ -10,6 +10,7 @@ import {
   duplicateCampaign,
   setPublishDetails,
   publishCampaign,
+  sendCampaign,
 } from '../controller/CampaignController.js';
 
 const router = Router();
@@ -25,5 +26,6 @@ router.delete('/:id',               authMiddleware, adminOnly, deleteCampaign);
 router.post('/:id/duplicate',       authMiddleware, adminOnly, duplicateCampaign);
 router.patch('/:id/publish-details',authMiddleware, adminOnly, setPublishDetails);
 router.post('/:id/publish',         authMiddleware, adminOnly, publishCampaign);
+router.post('/:id/send',            authMiddleware, adminOnly, sendCampaign);
 
 export default router;

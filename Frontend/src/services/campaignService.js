@@ -14,5 +14,8 @@ export const campaignService = {
   // ── Publish flow ────────────────────────────────────────────────────────────
   setPublishDetails: (id, data)  => patchRequest(`/campaign/${id}/publish-details`, data),
   publish:           (id)        => postRequest(`/campaign/${id}/publish`, {}),
+
+  // ── Send (immediate delivery via linked connection) ─────────────────────────
+  send:              (id)        => postRequest(`/campaign/${id}/send`, {}),
 };
 

@@ -3,10 +3,12 @@ import {
   X, Mail, MessageCircle, MessageSquare, Bell, Smartphone,
   Radio, Layers, Globe, Calendar, Clock, Send, AlertCircle,
   CheckCircle2, Eye, Users, FileText, Copy, ChevronDown, ChevronUp,
+  Loader2, Zap,
 } from "lucide-react";
-import { useToast } from "../../hooks/useToast";
+import { useToast }     from "../../hooks/useToast";
 import { useCampaigns } from "../../context/CampaignContext";
-import { useAuth } from "../../context/AuthContext";
+import { useAuth }      from "../../context/AuthContext";
+import { campaignService } from "../../services/campaignService";
 
 // ── Channel maps ──────────────────────────────────────────────────────────────
 const TYPE_ICONS = {
@@ -167,6 +169,73 @@ function PublishConfirm({ open, campaign, onCancel, onConfirm, publishing }) {
   );
 }
 
+// ── Send Campaign confirm dialog ───────────────────────────────────────────────
+function SendConfirm({ open, campaign, onCancel, onConfirm, sending }) {
+  if (!open) return null;
+  const hasConn     = Boolean(campaign?.connectionId);
+  const hasTemplate = Boolean(campaign?.template);
+  const hasAudience = (campaign?.audience?.length || 0) > 0;
+  const canSend     = hasConn && hasTemplate && hasAudience;
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onCancel} />
+      <div className="relative bg-white dark:bg-[#161B22] rounded-2xl border border-[#E4E7EC] dark:border-[#2A2F3A] shadow-2xl w-full max-w-sm p-7 space-y-5">
+        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/30">
+          <Zap className="w-7 h-7 text-white" />
+        </div>
+        <div className="text-center">
+          <h3 className="font-bold text-gray-900 dark:text-gray-100 text-lg">Send Campaign Now</h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+            Emails will be sent immediately via the linked connection to{" "}
+            <span className="font-semibold text-gray-700 dark:text-gray-200">
+              {campaign?.audience?.length || 0} recipient(s)
+            </span>.
+          </p>
+        </div>
+
+        {/* Pre-flight checklist */}
+        <div className="space-y-2">
+          {[
+            [hasConn,     "Connection linked"],
+            [hasTemplate, "Template attached"],
+            [hasAudience, "Audience selected"],
+          ].map(([ok, label]) => (
+            <div key={label} className={`flex items-center gap-2 text-sm px-3 py-2 rounded-lg ${
+              ok ? "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400"
+                 : "bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400"
+            }`}>
+              {ok
+                ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                : <AlertCircle  className="w-4 h-4 flex-shrink-0" />}
+              {label}
+            </div>
+          ))}
+        </div>
+
+        {!canSend && (
+          <p className="text-xs text-red-500 dark:text-red-400 text-center">
+            Fix the items above before sending. Edit the campaign to add missing details.
+          </p>
+        )}
+
+        <div className="flex gap-3">
+          <button onClick={onCancel}
+            className="flex-1 py-2.5 text-sm border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-xl text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors font-medium">
+            Cancel
+          </button>
+          <button onClick={onConfirm} disabled={sending || !canSend}
+            className="flex-1 py-2.5 text-sm bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-xl font-semibold hover:shadow-lg hover:shadow-emerald-500/30 transition-all disabled:opacity-60 flex items-center justify-center gap-2">
+            {sending
+              ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Sending…</>
+              : <><Zap className="w-3.5 h-3.5" />Send Now</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Stat card (delivery stats) ────────────────────────────────────────────────
 function Stat({ label, value, color }) {
   return (
@@ -185,8 +254,13 @@ export function CampaignViewDrawer({ campaign, onClose, onPublishDone }) {
   const { isAdmin }          = useAuth();
   const { publishCampaign }  = useCampaigns();
 
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [publishing, setPublishing]   = useState(false);
+  const [showConfirm, setShowConfirm]   = useState(false);
+  const [publishing, setPublishing]     = useState(false);
+  const [showSendDlg, setShowSendDlg]   = useState(false);
+  const [sending, setSending]           = useState(false);
+  // local delivery stat bump after send
+  const [sentCount, setSentCount]       = useState(null);
+  const [failedCount, setFailedCount]   = useState(null);
 
   if (!campaign) return null;
 
@@ -201,6 +275,9 @@ export function CampaignViewDrawer({ campaign, onClose, onPublishDone }) {
   const isCompleted = campaign.scheduleStatus === "Completed";
   const isLive      = campaign.scheduleStatus === "Live";
   const canPublish  = isAdmin && isApproved;
+  // Send button: email channel + admin + has connection
+  const isEmail     = campaign.channelType === "Email";
+  const canSendNow  = isAdmin && isEmail;
 
   const handlePublish = async () => {
     setPublishing(true);
@@ -212,6 +289,33 @@ export function CampaignViewDrawer({ campaign, onClose, onPublishDone }) {
       addToast(`Publish failed: ${err.message}`, "error");
     } finally {
       setPublishing(false);
+    }
+  };
+
+  // ── Send handler ────────────────────────────────────────────────────────────
+  const handleSend = async () => {
+    setSending(true);
+    try {
+      const res = await campaignService.send(campaign.id || campaign._id);
+      setShowSendDlg(false);
+      const d = res?.data || {};
+      setSentCount(d.sent ?? 0);
+      setFailedCount(d.failed ?? 0);
+      if ((d.failed ?? 0) === 0 && (d.sent ?? 0) > 0) {
+        addToast(`✅ Sent to ${d.sent} recipient(s) successfully!`, "success");
+      } else if ((d.sent ?? 0) === 0) {
+        // All failed — show the first actual error from Brevo
+        const firstErr = d.errors?.[0]?.error || "Unknown error. Check backend terminal.";
+        addToast(`❌ All ${d.failed} failed: ${firstErr}`, "error");
+      } else {
+        // Partial success
+        const firstErr = d.errors?.[0]?.error || "";
+        addToast(`⚠️ Sent ${d.sent}, failed ${d.failed}. ${firstErr}`, "warning");
+      }
+    } catch (err) {
+      addToast(`Send failed: ${err.message}`, "error");
+    } finally {
+      setSending(false);
     }
   };
 
@@ -286,6 +390,17 @@ export function CampaignViewDrawer({ campaign, onClose, onPublishDone }) {
 
               {/* Right: actions */}
               <div className="flex items-center gap-3 flex-shrink-0">
+                {/* Send Campaign button (email + admin) */}
+                {canSendNow && (
+                  <button
+                    onClick={() => setShowSendDlg(true)}
+                    disabled={sending}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-sm font-bold rounded-xl hover:shadow-xl hover:shadow-emerald-500/30 hover:-translate-y-0.5 transition-all disabled:opacity-60">
+                    {sending
+                      ? <><Loader2 className="w-4 h-4 animate-spin" />Sending…</>
+                      : <><Zap className="w-4 h-4" />Send Campaign</>}
+                  </button>
+                )}
                 {canPublish && (
                   <button
                     onClick={() => setShowConfirm(true)}
@@ -364,16 +479,16 @@ export function CampaignViewDrawer({ campaign, onClose, onPublishDone }) {
                   )}
                 </Section>
 
-                {/* Delivery stats (published only) */}
-                {(isPublished || isCompleted || isLive) && (
-                  <Section title="Delivery Stats" icon={Eye} defaultOpen={false}>
+                {/* Delivery stats: shown after any send, or if published/completed/live */}
+                {(isPublished || isCompleted || isLive || sentCount !== null) && (
+                  <Section title="Delivery Stats" icon={Eye} defaultOpen={sentCount !== null}>
                     <div className="grid grid-cols-3 gap-3 pt-1">
-                      <Stat label="Sent"      value={campaign.deliveryStats?.sent}      color="bg-blue-50 border-blue-100 text-blue-700 dark:bg-blue-950/20 dark:border-blue-800/30 dark:text-blue-400" />
+                      <Stat label="Sent"      value={sentCount ?? campaign.deliveryStats?.sent}      color="bg-blue-50 border-blue-100 text-blue-700 dark:bg-blue-950/20 dark:border-blue-800/30 dark:text-blue-400" />
                       <Stat label="Delivered" value={campaign.deliveryStats?.delivered} color="bg-emerald-50 border-emerald-100 text-emerald-700 dark:bg-emerald-950/20 dark:border-emerald-800/30 dark:text-emerald-400" />
                       <Stat label="Opened"    value={campaign.deliveryStats?.opened}    color="bg-purple-50 border-purple-100 text-purple-700 dark:bg-purple-950/20 dark:border-purple-800/30 dark:text-purple-400" />
                       <Stat label="Clicked"   value={campaign.deliveryStats?.clicked}   color="bg-indigo-50 border-indigo-100 text-indigo-700 dark:bg-indigo-950/20 dark:border-indigo-800/30 dark:text-indigo-400" />
                       <Stat label="Bounced"   value={campaign.deliveryStats?.bounced}   color="bg-orange-50 border-orange-100 text-orange-700 dark:bg-orange-950/20 dark:border-orange-800/30 dark:text-orange-400" />
-                      <Stat label="Failed"    value={campaign.deliveryStats?.failed}    color="bg-red-50 border-red-100 text-red-700 dark:bg-red-950/20 dark:border-red-800/30 dark:text-red-400" />
+                      <Stat label="Failed"    value={failedCount ?? campaign.deliveryStats?.failed}    color="bg-red-50 border-red-100 text-red-700 dark:bg-red-950/20 dark:border-red-800/30 dark:text-red-400" />
                     </div>
                   </Section>
                 )}
@@ -420,6 +535,15 @@ export function CampaignViewDrawer({ campaign, onClose, onPublishDone }) {
         onCancel={() => setShowConfirm(false)}
         onConfirm={handlePublish}
         publishing={publishing}
+      />
+
+      {/* Send confirm */}
+      <SendConfirm
+        open={showSendDlg}
+        campaign={campaign}
+        onCancel={() => setShowSendDlg(false)}
+        onConfirm={handleSend}
+        sending={sending}
       />
 
       <style>{`

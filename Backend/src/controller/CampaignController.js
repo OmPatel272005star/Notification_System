@@ -1,5 +1,8 @@
 import Campaign    from '../models/Campaign.js';
-import '../models/Connection.js';   // registers Connection schema so populate works
+import Connection  from '../models/Connection.js';
+import Template    from '../models/Template.js';
+import Audience    from '../models/Audience.js';
+import { sendEmailViaConnection } from './ConnectionController.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -160,14 +163,9 @@ export const deleteCampaign = async (req, res) => {
     if (!campaign) {
       return res.status(404).json({ success: false, message: 'Campaign not found.' });
     }
-    if (['live', 'scheduled'].includes(campaign.schedule_status)) {
-      return res.status(400).json({
-        success: false,
-        message: `Cannot delete a campaign with schedule status "${campaign.schedule_status}".`,
-      });
-    }
 
     await campaign.deleteOne();
+    console.log(`[deleteCampaign] Deleted campaign ${campaign._id} "${campaign.name}"`);
     return res.status(200).json({ success: true, message: 'Campaign deleted.' });
   } catch (err) {
     console.error('[deleteCampaign]', err);
@@ -282,6 +280,130 @@ export const publishCampaign = async (req, res) => {
     return res.status(200).json({ success: true, data: populated });
   } catch (err) {
     console.error('[publishCampaign]', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /campaign/:id/send  (admin only)
+// Sends the campaign immediately via the linked connection to all audience
+// recipients. Works for both draft and published campaigns (demo-friendly).
+// ─────────────────────────────────────────────────────────────────────────────
+export const sendCampaign = async (req, res) => {
+  try {
+    // 1. Load campaign
+    const campaign = await Campaign.findById(req.params.id);
+    if (!campaign) {
+      return res.status(404).json({ success: false, message: 'Campaign not found.' });
+    }
+    if (campaign.channel_type !== 'email') {
+      return res.status(400).json({
+        success: false,
+        message: `Send is only supported for email campaigns (this is ${campaign.channel_type}).`,
+      });
+    }
+    if (!campaign.connection_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'No connection linked to this campaign. Edit the campaign and select a connection.',
+      });
+    }
+    if (!campaign.template_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'No template linked to this campaign.',
+      });
+    }
+    if (!campaign.audience_ids || campaign.audience_ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No audience selected for this campaign.',
+      });
+    }
+
+    // 2. Load connection (with raw encrypted creds)
+    console.log(`[sendCampaign] campaign=${campaign._id} conn=${campaign.connection_id} tmpl=${campaign.template_id} audience=${campaign.audience_ids?.length}`);
+    const conn = await Connection.findById(campaign.connection_id);
+    if (!conn) {
+      return res.status(404).json({ success: false, message: 'Linked connection not found.' });
+    }
+    console.log(`[sendCampaign] Using connection: ${conn.name} (${conn.provider}) sender=${conn.email}`);
+
+    // 3. Load template
+    const template = await Template.findById(campaign.template_id);
+    if (!template) {
+      return res.status(404).json({ success: false, message: 'Linked template not found.' });
+    }
+
+    const htmlBody = template.content?.html_body || '';
+    const subject  = campaign.email_settings?.subject ||
+                     template.content?.subject       ||
+                     campaign.name;
+
+    // 4. Load audience contacts
+    const contacts = await Audience.find({
+      _id:    { $in: campaign.audience_ids },
+      status: 'active',
+    }).select('first_name last_name emails');
+
+    if (contacts.length === 0) {
+      console.warn(`[sendCampaign] No active contacts found for audience_ids:`, campaign.audience_ids);
+      return res.status(400).json({
+        success: false,
+        message: 'No active audience contacts found for this campaign.',
+      });
+    }
+    console.log(`[sendCampaign] Sending to ${contacts.length} contact(s)`);
+
+    // 5. Send to each recipient
+    let sent   = 0;
+    let failed = 0;
+    const errors = [];
+
+    for (const contact of contacts) {
+      const primaryEmail = contact.emails?.find(e => e.is_primary)?.email
+                        || contact.emails?.[0]?.email;
+      if (!primaryEmail) { failed++; continue; }
+
+      const fullName = `${contact.first_name} ${contact.last_name}`.trim();
+
+      // Simple personalisation — replace {{first_name}} / {{last_name}} / {{full_name}}
+      const personalised = htmlBody
+        .replace(/\{\{first_name\}\}/gi, contact.first_name)
+        .replace(/\{\{last_name\}\}/gi,  contact.last_name)
+        .replace(/\{\{full_name\}\}/gi,   fullName)
+        .replace(/\{\{email\}\}/gi,       primaryEmail);
+
+      try {
+        const result = await sendEmailViaConnection(conn, {
+          toEmail:  primaryEmail,
+          toName:   fullName,
+          subject,
+          html:     personalised || undefined,
+          text:     template.content?.text_preview || undefined,
+        });
+        console.log(`[sendCampaign] ✅ Sent to ${primaryEmail}`, result?.messageId || '');
+        sent++;
+      } catch (sendErr) {
+        failed++;
+        errors.push({ email: primaryEmail, error: sendErr.message });
+        console.error(`[sendCampaign] ❌ Failed to ${primaryEmail}:`, sendErr.message);
+      }
+    }
+
+    // 6. Update delivery stats
+    campaign.delivery_stats.sent   = (campaign.delivery_stats.sent   || 0) + sent;
+    campaign.delivery_stats.failed = (campaign.delivery_stats.failed || 0) + failed;
+    await campaign.save();
+
+    const statusCode = failed === 0 ? 200 : 207; // 207 Multi-Status for partial success
+    return res.status(statusCode).json({
+      success: failed === 0,
+      message: `Sent ${sent} email(s)${failed > 0 ? `, ${failed} failed` : ''}.`,
+      data:    { sent, failed, errors },
+    });
+  } catch (err) {
+    console.error('[sendCampaign]', err);
     return res.status(500).json({ success: false, message: err.message });
   }
 };

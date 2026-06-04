@@ -1,30 +1,62 @@
 import { useState, useRef, useEffect } from "react";
 import {
   Search, Plus, MoreVertical, Trash2, Edit3, Eye, X, Plug,
-  AlertTriangle, CheckCircle,
+  AlertTriangle, CheckCircle, XCircle, Clock, Loader2, FlaskConical,
+  KeyRound, Server,
 } from "lucide-react";
-import { useToast } from "../../hooks/useToast";
-
-// ── Provider config ───────────────────────────────────────────────────────────
-const PROVIDERS = [
-  { id: "resend",    name: "Resend",       bg: "bg-black dark:bg-gray-800",  letter: "R" },
-  { id: "sendgrid",  name: "SendGrid",     bg: "bg-[#1A82E2]",               letter: "SG" },
-  { id: "mailgun",   name: "Mailgun",      bg: "bg-[#F06B26]",               letter: "MG" },
-  { id: "ses",       name: "AWS SES",      bg: "bg-[#FF9900]",               letter: "SES" },
-  { id: "smtp",      name: "Custom SMTP",  bg: "bg-gray-600",                letter: "⚙" },
-];
-
-const PROV_MAP = Object.fromEntries(PROVIDERS.map(p => [p.name, p]));
-
-const INIT_CONNECTIONS = [
-  { id: 1, name: "Primary Mailer",    provider: "Resend",      senderEmail: "noreply@mailflow.io",  senderName: "MailFlow",  apiKey: "re_••••••••" },
-  { id: 2, name: "Marketing Emails",  provider: "SendGrid",    senderEmail: "team@mailflow.io",     senderName: "MailFlow Team", apiKey: "SG.••••••••" },
-  { id: 3, name: "Transactional",     provider: "AWS SES",     senderEmail: "alerts@mailflow.io",   senderName: "MailFlow Alerts", apiKey: "AKIA••••••••" },
-];
+import { useToast }       from "../../hooks/useToast";
+import { useConnections } from "../../context/ConnectionContext";
 
 // ── Shared input style ────────────────────────────────────────────────────────
 const inputCls =
   "w-full px-3 py-2.5 text-sm rounded-xl border border-[#E4E7EC] dark:border-[#2A2F3A] bg-[#F7F8FC] dark:bg-[#0F1117] text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#6D5EF5] transition-all";
+const labelCls = "block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5";
+
+// ── Provider display map ──────────────────────────────────────────────────────
+const PROVIDER_LABELS = {
+  brevo_api: "Brevo API",
+  smtp:      "Custom SMTP",
+};
+
+const PROVIDER_COLORS = {
+  brevo_api: "bg-[#0092FF]",
+  smtp:      "bg-gray-500",
+};
+
+const PROVIDER_INITIALS = {
+  brevo_api: "B",
+  smtp:      "⚙",
+};
+
+// ── Status badge ──────────────────────────────────────────────────────────────
+function StatusBadge({ status }) {
+  if (status === "ok") return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
+      <CheckCircle className="w-3 h-3" /> Verified
+    </span>
+  );
+  if (status === "failed") return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-600 dark:bg-red-950/40 dark:text-red-400">
+      <XCircle className="w-3 h-3" /> Failed
+    </span>
+  );
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+      <Clock className="w-3 h-3" /> Untested
+    </span>
+  );
+}
+
+// ── Provider avatar ───────────────────────────────────────────────────────────
+function ProvAvatar({ provider, size = "sm" }) {
+  const sz = size === "sm" ? "w-8 h-8 text-xs" : "w-10 h-10 text-sm";
+  const bg = PROVIDER_COLORS[provider] || "bg-gray-500";
+  return (
+    <div className={`${sz} ${bg} rounded-xl flex items-center justify-center text-white font-bold flex-shrink-0`}>
+      {PROVIDER_INITIALS[provider] || "?"}
+    </div>
+  );
+}
 
 // ── Modal wrapper ─────────────────────────────────────────────────────────────
 function Modal({ open, onClose, children, wide }) {
@@ -42,27 +74,16 @@ function Modal({ open, onClose, children, wide }) {
   );
 }
 
-// ── Provider avatar ───────────────────────────────────────────────────────────
-function ProvAvatar({ provider, size = "sm" }) {
-  const cfg = PROV_MAP[provider] || { bg: "bg-gray-500", letter: "?" };
-  const sz = size === "sm" ? "w-8 h-8 text-xs" : "w-10 h-10 text-sm";
-  return (
-    <div className={`${sz} ${cfg.bg} rounded-xl flex items-center justify-center text-white font-bold flex-shrink-0`}>
-      {cfg.letter}
-    </div>
-  );
-}
-
 // ── Three-dot row menu ────────────────────────────────────────────────────────
-function RowMenu({ conn, onView, onEdit, onDelete }) {
-  const [open, setOpen] = useState(false);
+function RowMenu({ conn, onView, onEdit, onDelete, onTest, testing }) {
+  const [open, setOpen]   = useState(false);
   const [openUp, setOpenUp] = useState(false);
-  const ref = useRef(null);
+  const ref    = useRef(null);
   const btnRef = useRef(null);
 
   useEffect(() => {
     if (!open) return;
-    function handler(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    const handler = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
@@ -70,7 +91,7 @@ function RowMenu({ conn, onView, onEdit, onDelete }) {
   const handleToggle = () => {
     if (!open && btnRef.current) {
       const rect = btnRef.current.getBoundingClientRect();
-      setOpenUp(window.innerHeight - rect.bottom < 150);
+      setOpenUp(window.innerHeight - rect.bottom < 160);
     }
     setOpen(v => !v);
   };
@@ -87,31 +108,23 @@ function RowMenu({ conn, onView, onEdit, onDelete }) {
       </button>
 
       {open && (
-        <div className={`absolute right-0 z-50 w-40 bg-white dark:bg-[#1A2030] border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-xl shadow-xl overflow-hidden animate-fade-in ${openUp ? "bottom-8" : "top-8"}`}>
-          {/* View */}
-          <button
-            onClick={() => { setOpen(false); onView(conn); }}
-            className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#222B3A] transition-colors"
-          >
+        <div className={`absolute right-0 z-50 w-44 bg-white dark:bg-[#1A2030] border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-xl shadow-xl overflow-hidden animate-fade-in ${openUp ? "bottom-8" : "top-8"}`}>
+          <button onClick={() => { setOpen(false); onView(conn); }}
+            className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#222B3A] transition-colors">
             <Eye className="w-3.5 h-3.5" /> View
           </button>
-
-          {/* Edit */}
-          <button
-            onClick={() => { setOpen(false); onEdit(conn); }}
-            className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#222B3A] transition-colors"
-          >
+          <button onClick={() => { setOpen(false); onEdit(conn); }}
+            className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#222B3A] transition-colors">
             <Edit3 className="w-3.5 h-3.5" /> Edit
           </button>
-
-          {/* Divider */}
+          <button onClick={() => { setOpen(false); onTest(conn._id); }} disabled={testing}
+            className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-[#6D5EF5] hover:bg-[#6D5EF5]/5 dark:hover:bg-[#6D5EF5]/10 transition-colors disabled:opacity-50">
+            {testing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FlaskConical className="w-3.5 h-3.5" />}
+            {testing ? "Testing…" : "Test"}
+          </button>
           <div className="border-t border-[#E4E7EC] dark:border-[#2A2F3A]" />
-
-          {/* Delete */}
-          <button
-            onClick={() => { setOpen(false); onDelete(conn); }}
-            className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors"
-          >
+          <button onClick={() => { setOpen(false); onDelete(conn); }}
+            className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors">
             <Trash2 className="w-3.5 h-3.5" /> Delete
           </button>
         </div>
@@ -121,17 +134,34 @@ function RowMenu({ conn, onView, onEdit, onDelete }) {
 }
 
 // ── Add / Edit form dialog ────────────────────────────────────────────────────
-function ConnectionFormDialog({ open, onClose, onSave, initial }) {
+const BLANK_BREVO = { name: "", email: "", provider: "brevo_api", brevo_api_key: "" };
+const BLANK_SMTP  = { name: "", email: "", provider: "smtp", smtp_host: "", smtp_port: 587, smtp_user: "", smtp_pass: "", smtp_secure: false };
+
+function ConnectionFormDialog({ open, onClose, onSave, initial, saving }) {
   const isEdit = Boolean(initial);
-  const blank = { name: "", provider: "Resend", apiKey: "", senderEmail: "", senderName: "" };
-  const [form, setForm] = useState(blank);
+  const [form, setForm] = useState(BLANK_BREVO);
 
   useEffect(() => {
-    if (open) setForm(initial ? { name: initial.name, provider: initial.provider, apiKey: initial.apiKey || "", senderEmail: initial.senderEmail, senderName: initial.senderName } : blank);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!open) return;
+    if (initial) {
+      setForm({
+        name:         initial.name     || "",
+        email:        initial.email    || "",
+        provider:     initial.provider || "brevo_api",
+        brevo_api_key: "••••••••",      // always show mask when editing
+        smtp_host:    initial.smtp_host || "",
+        smtp_port:    initial.smtp_port || 587,
+        smtp_user:    initial.smtp_user || "",
+        smtp_pass:    "••••••••",
+        smtp_secure:  Boolean(initial.smtp_secure),
+      });
+    } else {
+      setForm(BLANK_BREVO);
+    }
   }, [open, initial]);
 
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const set    = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const isBrevo = form.provider === "brevo_api";
 
   return (
     <Modal open={open} onClose={onClose} wide>
@@ -143,17 +173,15 @@ function ConnectionFormDialog({ open, onClose, onSave, initial }) {
           </div>
           <div>
             <h2 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">
-              {isEdit ? "Edit Connection" : "Add Connection"}
+              {isEdit ? "Edit Connection" : "Add Email Connection"}
             </h2>
             <p className="text-xs text-gray-400 mt-0.5">
-              {isEdit ? "Update your connection details." : "Configure a new email provider connection."}
+              {isEdit ? "Update your connection credentials." : "Configure a sender to use in campaigns."}
             </p>
           </div>
         </div>
-        <button
-          onClick={onClose}
-          className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-        >
+        <button onClick={onClose}
+          className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
           <X className="w-4 h-4" />
         </button>
       </div>
@@ -161,91 +189,97 @@ function ConnectionFormDialog({ open, onClose, onSave, initial }) {
       {/* Body */}
       <div className="p-6 space-y-4">
 
-        {/* Provider */}
+        {/* Provider toggle */}
         <div>
-          <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-            Provider <span className="text-red-400">*</span>
-          </label>
-          <select
-            value={form.provider}
-            onChange={e => set("provider", e.target.value)}
-            className={inputCls}
-          >
-            {PROVIDERS.map(p => (
-              <option key={p.id} value={p.name}>{p.name}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Connection Name */}
-        <div>
-          <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-            Connection Name <span className="text-red-400">*</span>
-          </label>
-          <input
-            type="text"
-            placeholder="e.g. Primary Mailer"
-            value={form.name}
-            onChange={e => set("name", e.target.value)}
-            className={inputCls}
-          />
-        </div>
-
-        {/* API Key */}
-        <div>
-          <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-            API Key <span className="text-red-400">*</span>
-          </label>
-          <input
-            type="password"
-            placeholder="Enter your API key"
-            value={form.apiKey}
-            onChange={e => set("apiKey", e.target.value)}
-            className={inputCls}
-            autoComplete="new-password"
-          />
-        </div>
-
-        {/* Sender Name + Sender Email side by side */}
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-              Sender Name <span className="text-red-400">*</span>
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. MailFlow"
-              value={form.senderName}
-              onChange={e => set("senderName", e.target.value)}
-              className={inputCls}
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-              Sender Email <span className="text-red-400">*</span>
-            </label>
-            <input
-              type="email"
-              placeholder="noreply@company.com"
-              value={form.senderEmail}
-              onChange={e => set("senderEmail", e.target.value)}
-              className={inputCls}
-            />
+          <label className={labelCls}>Provider <span className="text-red-400">*</span></label>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { id: "brevo_api", label: "Brevo API",    Icon: KeyRound },
+              { id: "smtp",      label: "Custom SMTP",  Icon: Server   },
+            ].map(({ id, label, Icon }) => {
+              const sel = form.provider === id;
+              return (
+                <button key={id} type="button" onClick={() => set("provider", id)}
+                  className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 text-sm font-medium transition-all ${sel ? "border-[#6D5EF5] bg-[#6D5EF5]/8 dark:bg-[#6D5EF5]/10 text-[#6D5EF5]" : "border-[#E4E7EC] dark:border-[#2A2F3A] text-gray-600 dark:text-gray-400 hover:border-[#6D5EF5]/40"}`}>
+                  <Icon className="w-4 h-4" /> {label}
+                </button>
+              );
+            })}
           </div>
         </div>
+
+        {/* Connection name */}
+        <div>
+          <label className={labelCls}>Connection Name <span className="text-red-400">*</span></label>
+          <input type="text" placeholder="e.g. Primary Mailer"
+            value={form.name} onChange={e => set("name", e.target.value)} className={inputCls} />
+        </div>
+
+        {/* Sender email */}
+        <div>
+          <label className={labelCls}>Sender Email <span className="text-red-400">*</span></label>
+          <input type="email" placeholder="noreply@yourcompany.com"
+            value={form.email} onChange={e => set("email", e.target.value)} className={inputCls} />
+          <p className="text-xs text-gray-400 mt-1">Must be a verified sender in your provider dashboard.</p>
+        </div>
+
+        {/* ── Brevo API fields ── */}
+        {isBrevo && (
+          <div>
+            <label className={labelCls}>Brevo API Key <span className="text-red-400">*</span></label>
+            <input type="password" placeholder="xkeysib-••••••••"
+              value={form.brevo_api_key} onChange={e => set("brevo_api_key", e.target.value)}
+              className={inputCls} autoComplete="new-password" />
+            <p className="text-xs text-gray-400 mt-1">
+              Found in Brevo → SMTP &amp; API → API Keys. Free plan supports up to 300 emails/day.
+            </p>
+          </div>
+        )}
+
+        {/* ── SMTP fields ── */}
+        {!isBrevo && (
+          <>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="col-span-2">
+                <label className={labelCls}>SMTP Host <span className="text-red-400">*</span></label>
+                <input type="text" placeholder="smtp-relay.brevo.com"
+                  value={form.smtp_host} onChange={e => set("smtp_host", e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>Port</label>
+                <input type="number" placeholder="587"
+                  value={form.smtp_port} onChange={e => set("smtp_port", Number(e.target.value))} className={inputCls} />
+              </div>
+            </div>
+            <div>
+              <label className={labelCls}>SMTP Username <span className="text-red-400">*</span></label>
+              <input type="text" placeholder="your@email.com"
+                value={form.smtp_user} onChange={e => set("smtp_user", e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>SMTP Password <span className="text-red-400">*</span></label>
+              <input type="password" placeholder="••••••••"
+                value={form.smtp_pass} onChange={e => set("smtp_pass", e.target.value)}
+                className={inputCls} autoComplete="new-password" />
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" checked={form.smtp_secure}
+                onChange={e => set("smtp_secure", e.target.checked)}
+                className="w-4 h-4 rounded accent-[#6D5EF5]" />
+              <span className="text-sm text-gray-700 dark:text-gray-300">Use TLS (port 465)</span>
+            </label>
+          </>
+        )}
 
         {/* Actions */}
         <div className="flex gap-3 pt-1">
-          <button
-            onClick={onClose}
-            className="flex-1 py-2.5 text-sm border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-xl text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-          >
+          <button onClick={onClose}
+            className="flex-1 py-2.5 text-sm border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-xl text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
             Cancel
           </button>
-          <button
-            onClick={() => onSave(form)}
-            className="flex-1 py-2.5 text-sm bg-gradient-to-r from-[#6D5EF5] to-[#8B7CFF] text-white rounded-xl hover:shadow-lg hover:shadow-[#6D5EF5]/30 transition-all font-medium"
-          >
+          <button onClick={() => onSave(form)} disabled={saving}
+            className="flex-1 py-2.5 text-sm bg-gradient-to-r from-[#6D5EF5] to-[#8B7CFF] text-white rounded-xl hover:shadow-lg hover:shadow-[#6D5EF5]/30 transition-all font-medium disabled:opacity-60 flex items-center justify-center gap-2">
+            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
             {isEdit ? "Save Changes" : "Add Connection"}
           </button>
         </div>
@@ -259,10 +293,11 @@ function ViewDialog({ open, onClose, conn }) {
   if (!conn) return null;
   const rows = [
     ["Connection Name", conn.name],
-    ["Provider", conn.provider],
-    ["Sender Name", conn.senderName],
-    ["Sender Email", conn.senderEmail],
-    ["API Key", conn.apiKey],
+    ["Sender Email",    conn.email],
+    ["Provider",        PROVIDER_LABELS[conn.provider] || conn.provider],
+    ["Test Status",     conn.last_test_status],
+    ["Last Tested",     conn.last_tested_at ? new Date(conn.last_tested_at).toLocaleString() : "Never"],
+    ["Added On",        conn.createdAt ? new Date(conn.createdAt).toLocaleDateString() : "—"],
   ];
   return (
     <Modal open={open} onClose={onClose}>
@@ -271,27 +306,23 @@ function ViewDialog({ open, onClose, conn }) {
           <ProvAvatar provider={conn.provider} size="md" />
           <div>
             <h2 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">{conn.name}</h2>
-            <p className="text-xs text-gray-400 mt-0.5">{conn.provider}</p>
+            <p className="text-xs text-gray-400 mt-0.5">{PROVIDER_LABELS[conn.provider] || conn.provider}</p>
           </div>
         </div>
-        <button
-          onClick={onClose}
-          className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-        >
+        <button onClick={onClose}
+          className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
           <X className="w-4 h-4" />
         </button>
       </div>
-      <div className="p-6 space-y-3">
+      <div className="p-6 space-y-2">
         {rows.map(([label, value]) => (
           <div key={label} className="flex items-center justify-between py-2 border-b border-[#E4E7EC] dark:border-[#2A2F3A] last:border-0">
             <span className="text-xs font-medium text-gray-500 dark:text-gray-400">{label}</span>
-            <span className="text-sm text-gray-800 dark:text-gray-200 font-medium max-w-[200px] truncate text-right">{value}</span>
+            <span className="text-sm text-gray-800 dark:text-gray-200 font-medium max-w-[220px] truncate text-right">{value || "—"}</span>
           </div>
         ))}
-        <button
-          onClick={onClose}
-          className="w-full mt-2 py-2.5 text-sm border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-xl text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-        >
+        <button onClick={onClose}
+          className="w-full mt-2 py-2.5 text-sm border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-xl text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
           Close
         </button>
       </div>
@@ -299,8 +330,8 @@ function ViewDialog({ open, onClose, conn }) {
   );
 }
 
-// ── Delete confirmation dialog ────────────────────────────────────────────────
-function DeleteDialog({ open, onClose, onConfirm, conn }) {
+// ── Delete confirmation ────────────────────────────────────────────────────────
+function DeleteDialog({ open, onClose, onConfirm, conn, deleting }) {
   return (
     <Modal open={open} onClose={onClose}>
       <div className="p-6 text-center space-y-4">
@@ -312,20 +343,17 @@ function DeleteDialog({ open, onClose, onConfirm, conn }) {
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1.5">
             Are you sure you want to delete{" "}
             <span className="font-medium text-gray-700 dark:text-gray-200">{conn?.name}</span>?
-            This action cannot be undone.
+            Any campaign using this connection will lose its sender. This cannot be undone.
           </p>
         </div>
         <div className="flex gap-3">
-          <button
-            onClick={onClose}
-            className="flex-1 py-2.5 text-sm border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-xl text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-          >
+          <button onClick={onClose}
+            className="flex-1 py-2.5 text-sm border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-xl text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
             Cancel
           </button>
-          <button
-            onClick={onConfirm}
-            className="flex-1 py-2.5 text-sm bg-red-500 hover:bg-red-600 text-white rounded-xl transition-colors font-medium"
-          >
+          <button onClick={onConfirm} disabled={deleting}
+            className="flex-1 py-2.5 text-sm bg-red-500 hover:bg-red-600 text-white rounded-xl transition-colors font-medium disabled:opacity-60 flex items-center justify-center gap-2">
+            {deleting && <Loader2 className="w-4 h-4 animate-spin" />}
             Delete
           </button>
         </div>
@@ -337,45 +365,87 @@ function DeleteDialog({ open, onClose, onConfirm, conn }) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function ConnectionPage() {
   const { addToast } = useToast();
-  const [connections, setConnections] = useState(INIT_CONNECTIONS);
-  const [search, setSearch] = useState("");
+  const { connections, loading, addConnection, editConnection, removeConnection, testConnection } = useConnections();
 
-  const [showAdd, setShowAdd]           = useState(false);
-  const [editTarget, setEditTarget]     = useState(null);
-  const [viewTarget, setViewTarget]     = useState(null);
+  const [search, setSearch]           = useState("");
+  const [showAdd, setShowAdd]         = useState(false);
+  const [editTarget, setEditTarget]   = useState(null);
+  const [viewTarget, setViewTarget]   = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [saving, setSaving]           = useState(false);
+  const [deleting, setDeleting]       = useState(false);
+  const [testingId, setTestingId]     = useState(null);
 
   const filtered = connections.filter(c =>
     c.name.toLowerCase().includes(search.toLowerCase()) ||
-    c.provider.toLowerCase().includes(search.toLowerCase()) ||
-    c.senderEmail.toLowerCase().includes(search.toLowerCase())
+    c.email.toLowerCase().includes(search.toLowerCase()) ||
+    (PROVIDER_LABELS[c.provider] || "").toLowerCase().includes(search.toLowerCase())
   );
 
-  // ── handlers ─────────────────────────────────────────────────────────────
-  const handleAdd = (form) => {
-    if (!form.name.trim())        { addToast("Connection name is required", "error"); return; }
-    if (!form.apiKey.trim())      { addToast("API key is required", "error"); return; }
-    if (!form.senderEmail.includes("@")) { addToast("Valid sender email required", "error"); return; }
-    if (!form.senderName.trim())  { addToast("Sender name is required", "error"); return; }
-    const nc = { id: Date.now(), ...form };
-    setConnections(p => [...p, nc]);
-    setShowAdd(false);
-    addToast(`Connection "${form.name}" added`, "success");
+  // ── Add ─────────────────────────────────────────────────────────────────────
+  const handleAdd = async (form) => {
+    if (!form.name.trim())  { addToast("Connection name is required", "error"); return; }
+    if (!form.email.includes("@")) { addToast("Valid sender email required", "error"); return; }
+    if (form.provider === "brevo_api" && !form.brevo_api_key.trim()) {
+      addToast("Brevo API key is required", "error"); return;
+    }
+    if (form.provider === "smtp" && (!form.smtp_host.trim() || !form.smtp_user.trim() || !form.smtp_pass.trim())) {
+      addToast("SMTP host, username and password are required", "error"); return;
+    }
+    setSaving(true);
+    try {
+      await addConnection(form);
+      setShowAdd(false);
+      addToast(`Connection "${form.name}" added successfully`, "success");
+    } catch (err) {
+      addToast(err.message || "Failed to add connection", "error");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleEdit = (form) => {
-    setConnections(p => p.map(c => c.id === editTarget.id ? { ...c, ...form } : c));
-    setEditTarget(null);
-    addToast("Connection updated", "success");
+  // ── Edit ─────────────────────────────────────────────────────────────────────
+  const handleEdit = async (form) => {
+    setSaving(true);
+    try {
+      await editConnection(editTarget._id, form);
+      setEditTarget(null);
+      addToast("Connection updated", "success");
+    } catch (err) {
+      addToast(err.message || "Failed to update connection", "error");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleDelete = () => {
-    setConnections(p => p.filter(c => c.id !== deleteTarget.id));
-    addToast(`"${deleteTarget.name}" deleted`, "success");
-    setDeleteTarget(null);
+  // ── Delete ───────────────────────────────────────────────────────────────────
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await removeConnection(deleteTarget._id);
+      addToast(`"${deleteTarget.name}" deleted`, "success");
+      setDeleteTarget(null);
+    } catch (err) {
+      addToast(err.message || "Failed to delete connection", "error");
+    } finally {
+      setDeleting(false);
+    }
   };
 
-  // ── render ────────────────────────────────────────────────────────────────
+  // ── Test ─────────────────────────────────────────────────────────────────────
+  const handleTest = async (id) => {
+    setTestingId(id);
+    try {
+      const res = await testConnection(id);
+      addToast(res?.message || "Test email sent! Check your inbox.", "success");
+    } catch (err) {
+      addToast(err.message || "Connection test failed", "error");
+    } finally {
+      setTestingId(null);
+    }
+  };
+
+  // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-5 animate-fade-in">
 
@@ -384,7 +454,7 @@ export default function ConnectionPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Connections</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-            {connections.length} connection{connections.length !== 1 ? "s" : ""} configured
+            {loading ? "Loading…" : `${connections.length} connection${connections.length !== 1 ? "s" : ""} configured`}
           </p>
         </div>
         <button
@@ -400,7 +470,7 @@ export default function ConnectionPage() {
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
         <input
           type="text"
-          placeholder="Search connections..."
+          placeholder="Search connections…"
           value={search}
           onChange={e => setSearch(e.target.value)}
           className="w-full pl-9 pr-4 py-2.5 text-sm rounded-xl border border-[#E4E7EC] dark:border-[#2A2F3A] bg-white dark:bg-[#161B22] text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#6D5EF5] transition-all"
@@ -409,102 +479,110 @@ export default function ConnectionPage() {
 
       {/* Table */}
       <div className="bg-white dark:bg-[#161B22] border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-xl">
-        <table className="min-w-full" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
-          <thead className="bg-gray-50 dark:bg-[#1A2030] border-b border-[#E4E7EC] dark:border-[#2A2F3A]">
-            <tr>
-              {["Name", "Email", "Connection Source", ""].map((h, i, arr) => (
-                <th
-                  key={h}
-                  className={`px-5 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ${
-                    i === 0 ? "rounded-tl-xl" : i === arr.length - 1 ? "rounded-tr-xl" : ""
-                  }`}
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[#E4E7EC] dark:divide-[#2A2F3A]">
-            {filtered.length === 0 ? (
+        {loading ? (
+          <div className="flex items-center justify-center py-20 gap-3 text-gray-400">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            <span className="text-sm">Loading connections…</span>
+          </div>
+        ) : (
+          <table className="min-w-full" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
+            <thead className="bg-gray-50 dark:bg-[#1A2030] border-b border-[#E4E7EC] dark:border-[#2A2F3A]">
               <tr>
-                <td colSpan={4} className="px-5 py-16 text-center">
-                  <div className="flex flex-col items-center gap-3">
-                    <div className="w-12 h-12 rounded-2xl bg-[#6D5EF5]/10 flex items-center justify-center">
-                      <Plug className="w-6 h-6 text-[#6D5EF5]" />
+                {["Name", "Sender Email", "Provider", "Status", ""].map((h, i, arr) => (
+                  <th key={h || i}
+                    className={`px-5 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ${i === 0 ? "rounded-tl-xl" : i === arr.length - 1 ? "rounded-tr-xl" : ""}`}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#E4E7EC] dark:divide-[#2A2F3A]">
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-5 py-16 text-center">
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="w-12 h-12 rounded-2xl bg-[#6D5EF5]/10 flex items-center justify-center">
+                        <Plug className="w-6 h-6 text-[#6D5EF5]" />
+                      </div>
+                      <p className="text-sm text-gray-400">
+                        {search ? "No connections match your search." : "No connections yet. Add your first one."}
+                      </p>
                     </div>
-                    <p className="text-sm text-gray-400">
-                      {search ? "No connections match your search." : "No connections yet. Add your first one."}
-                    </p>
-                  </div>
-                </td>
-              </tr>
-            ) : filtered.map(conn => (
-              <tr key={conn.id} className="hover:bg-gray-50 dark:hover:bg-[#1A2030] transition-colors">
+                  </td>
+                </tr>
+              ) : filtered.map(conn => (
+                <tr key={conn._id} className="hover:bg-gray-50 dark:hover:bg-[#1A2030] transition-colors">
+                  {/* Name */}
+                  <td className="px-5 py-4">
+                    <div className="flex items-center gap-3">
+                      <ProvAvatar provider={conn.provider} />
+                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{conn.name}</span>
+                    </div>
+                  </td>
 
-                {/* Name */}
-                <td className="px-5 py-4">
-                  <div className="flex items-center gap-3">
-                    <ProvAvatar provider={conn.provider} />
-                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{conn.name}</span>
-                  </div>
-                </td>
+                  {/* Email */}
+                  <td className="px-5 py-4">
+                    <span className="text-sm text-gray-500 dark:text-gray-400">{conn.email}</span>
+                  </td>
 
-                {/* Sender Email */}
-                <td className="px-5 py-4">
-                  <span className="text-sm text-gray-500 dark:text-gray-400">{conn.senderEmail}</span>
-                </td>
+                  {/* Provider */}
+                  <td className="px-5 py-4">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#6D5EF5]/10 text-[#6D5EF5] dark:bg-[#6D5EF5]/20 dark:text-[#8B7CFF]">
+                      {PROVIDER_LABELS[conn.provider] || conn.provider}
+                    </span>
+                  </td>
 
-                {/* Provider / Connection Source */}
-                <td className="px-5 py-4">
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#6D5EF5]/10 text-[#6D5EF5] dark:bg-[#6D5EF5]/20 dark:text-[#8B7CFF]">
-                    {conn.provider}
-                  </span>
-                </td>
+                  {/* Test Status */}
+                  <td className="px-5 py-4">
+                    <StatusBadge status={conn.last_test_status} />
+                  </td>
 
-                {/* Three-dot menu */}
-                <td className="px-5 py-4 text-right">
-                  <RowMenu
-                    conn={conn}
-                    onView={setViewTarget}
-                    onEdit={setEditTarget}
-                    onDelete={setDeleteTarget}
-                  />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                  {/* Actions */}
+                  <td className="px-5 py-4 text-right">
+                    <RowMenu
+                      conn={conn}
+                      onView={setViewTarget}
+                      onEdit={setEditTarget}
+                      onDelete={setDeleteTarget}
+                      onTest={handleTest}
+                      testing={testingId === conn._id}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
-      {/* Add Connection Dialog */}
+      {/* Add Dialog */}
       <ConnectionFormDialog
         open={showAdd}
         onClose={() => setShowAdd(false)}
         onSave={handleAdd}
         initial={null}
+        saving={saving}
       />
 
-      {/* Edit Connection Dialog */}
+      {/* Edit Dialog */}
       <ConnectionFormDialog
         open={Boolean(editTarget)}
         onClose={() => setEditTarget(null)}
         onSave={handleEdit}
         initial={editTarget}
+        saving={saving}
       />
 
       {/* View Dialog */}
-      <ViewDialog
-        open={Boolean(viewTarget)}
-        onClose={() => setViewTarget(null)}
-        conn={viewTarget}
-      />
+      <ViewDialog open={Boolean(viewTarget)} onClose={() => setViewTarget(null)} conn={viewTarget} />
 
-      {/* Delete Confirmation */}
+      {/* Delete Dialog */}
       <DeleteDialog
         open={Boolean(deleteTarget)}
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleDelete}
         conn={deleteTarget}
+        deleting={deleting}
       />
     </div>
   );
