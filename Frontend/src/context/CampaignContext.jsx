@@ -105,6 +105,9 @@ function normalizeCampaign(doc) {
     // Delivery stats
     deliveryStats: doc.delivery_stats || {},
 
+    // Periodic scheduling settings
+    periodicSettings: doc.periodic_settings || null,
+
     // Raw doc for reference
     _raw: doc,
   };

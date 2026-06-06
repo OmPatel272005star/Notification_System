@@ -214,7 +214,7 @@ export const duplicateCampaign = async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 export const setPublishDetails = async (req, res) => {
   try {
-    const { scheduled_at } = req.body;
+    const { scheduled_at, schedule_type, periodic_settings } = req.body;
 
     if (!scheduled_at) {
       return res.status(400).json({
@@ -234,9 +234,64 @@ export const setPublishDetails = async (req, res) => {
       });
     }
 
-    campaign.publish_details = { scheduled_at: new Date(scheduled_at) };
-    await campaign.save();
+    const startDate = new Date(scheduled_at);
+    const now = new Date();
 
+    if (startDate <= now) {
+      return res.status(400).json({
+        success: false,
+        message: 'Start date/time must be in the future (IST).',
+      });
+    }
+
+    campaign.publish_details = { scheduled_at: startDate };
+
+    if (schedule_type === 'periodic' && periodic_settings) {
+      const ps = periodic_settings;
+
+      // Validate interval
+      if (!['hourly', 'daily', 'weekly'].includes(ps.interval)) {
+        return res.status(400).json({ success: false, message: 'Invalid interval. Use hourly, daily, or weekly.' });
+      }
+      // Validate frequency
+      if (!ps.frequency || Number(ps.frequency) < 1) {
+        return res.status(400).json({ success: false, message: 'frequency must be at least 1.' });
+      }
+      // Validate ends_type
+      if (!['on', 'after'].includes(ps.ends_type)) {
+        return res.status(400).json({ success: false, message: 'ends_type must be "on" or "after".' });
+      }
+      if (ps.ends_type === 'on') {
+        if (!ps.end_date) {
+          return res.status(400).json({ success: false, message: 'end_date is required when ends_type is "on".' });
+        }
+        if (new Date(ps.end_date) <= startDate) {
+          return res.status(400).json({ success: false, message: 'end_date must be after the start date.' });
+        }
+      }
+      if (ps.ends_type === 'after') {
+        if (!ps.occurrences || Number(ps.occurrences) < 1) {
+          return res.status(400).json({ success: false, message: 'occurrences must be at least 1.' });
+        }
+      }
+
+      campaign.schedule_type = 'periodic';
+      campaign.periodic_settings = {
+        interval:        ps.interval,
+        frequency:       Number(ps.frequency),
+        ends_type:       ps.ends_type,
+        end_date:        ps.ends_type === 'on'    ? new Date(ps.end_date)         : undefined,
+        occurrences:     ps.ends_type === 'after' ? Number(ps.occurrences)        : undefined,
+        occurrences_run: 0,
+        next_run_at:     startDate,
+      };
+    } else {
+      // One-time: reset schedule type, leave periodic_settings cleared
+      campaign.schedule_type = 'one_time';
+      campaign.periodic_settings = undefined;
+    }
+
+    await campaign.save();
     const populated = await Campaign.findById(campaign._id).populate(POPULATE_OPTS);
     return res.status(200).json({ success: true, data: populated });
   } catch (err) {
@@ -270,9 +325,13 @@ export const publishCampaign = async (req, res) => {
 
     campaign.status                       = 'published';
     campaign.publish_details.published_at = now;
-    // If the scheduled time is still in the future → 'scheduled'
-    // If it has already passed (immediate or past) → 'completed'
-    campaign.schedule_status = scheduledAt > now ? 'scheduled' : 'completed';
+    // Periodic campaigns are always 'scheduled' — the scheduler handles completion.
+    // One-time: if scheduled time is still future → 'scheduled', else 'completed'.
+    if (campaign.schedule_type === 'periodic') {
+      campaign.schedule_status = 'scheduled';
+    } else {
+      campaign.schedule_status = scheduledAt > now ? 'scheduled' : 'completed';
+    }
 
     await campaign.save();
 

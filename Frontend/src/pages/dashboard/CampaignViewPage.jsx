@@ -274,6 +274,7 @@ export function CampaignViewDrawer({ campaign, onClose, onPublishDone }) {
   const isScheduled = campaign.scheduleStatus === "Scheduled";
   const isCompleted = campaign.scheduleStatus === "Completed";
   const isLive      = campaign.scheduleStatus === "Live";
+  const isPeriodic  = campaign.scheduleType === "Periodic";
   const canPublish  = isAdmin && isApproved;
   // Send button: email channel + admin + has connection
   const isEmail     = campaign.channelType === "Email";
@@ -323,7 +324,11 @@ export function CampaignViewDrawer({ campaign, onClose, onPublishDone }) {
   const banner =
     isApproved  ? <Banner type="pending"   title="Pending Publishing"  msg="This campaign is <strong>approved</strong> and ready to go live. Click <strong>Publish</strong> above to activate." />
   : isDraft     ? <Banner type="info"      title=""                    msg='This campaign is a draft. Use <strong>Set Publish Details</strong> from the campaign list to schedule it.' />
+  : isScheduled && isPeriodic
+                ? <Banner type="scheduled" title="Periodic — Scheduled"  msg={`Next run: <strong>${fmt(campaign.periodicSettings?.next_run_at)}</strong> &nbsp;·&nbsp; Runs completed: <strong>${campaign.periodicSettings?.occurrences_run ?? 0}</strong>`} />
   : isScheduled ? <Banner type="scheduled" title="Scheduled"           msg={`Delivery scheduled for <strong>${fmt(campaign.publishDetails?.scheduled_at)}</strong>.`} />
+  : isCompleted && isPeriodic
+                ? <Banner type="success"   title="Periodic — Completed" msg={`All ${campaign.periodicSettings?.occurrences_run ?? 0} run(s) finished.`} />
   : isCompleted ? <Banner type="success"   title="Completed"           msg={`Campaign was sent on <strong>${fmt(campaign.publishDetails?.scheduled_at)}</strong>.`} />
   : isLive      ? <Banner type="success"   title="Live"                msg="This campaign is currently live and being delivered." />
   : null;
@@ -464,16 +469,57 @@ export function CampaignViewDrawer({ campaign, onClose, onPublishDone }) {
                 <Section title="Publish Details" icon={Calendar}>
                   <Row label="Trigger Type" value="Time-Based" />
                   <Row label="Recurrence"   value={campaign.scheduleType || "One Time"} />
-                  <Row label="Scheduled At">
-                    {hasSchedule ? (
-                      <div className="flex items-center gap-2 text-[#6D5EF5] font-bold text-sm">
-                        <Clock className="w-3.5 h-3.5" />
-                        {fmt(campaign.publishDetails.scheduled_at)}
-                      </div>
-                    ) : (
-                      <span className="text-gray-400 italic text-sm">Not yet set</span>
-                    )}
-                  </Row>
+
+                  {/* ── One-time: single scheduled_at ── */}
+                  {!isPeriodic && (
+                    <Row label="Scheduled At">
+                      {hasSchedule ? (
+                        <div className="flex items-center gap-2 text-[#6D5EF5] font-bold text-sm">
+                          <Clock className="w-3.5 h-3.5" />
+                          {fmt(campaign.publishDetails.scheduled_at)}
+                        </div>
+                      ) : (
+                        <span className="text-gray-400 italic text-sm">Not yet set</span>
+                      )}
+                    </Row>
+                  )}
+
+                  {/* ── Periodic: full config breakdown ── */}
+                  {isPeriodic && campaign.periodicSettings && (() => {
+                    const ps = campaign.periodicSettings;
+                    const unit = ps.interval === 'hourly' ? 'hour(s)' : ps.interval === 'weekly' ? 'week(s)' : 'day(s)';
+                    const endsLabel =
+                      ps.ends_type === 'on'
+                        ? `On ${fmt(ps.end_date)}`
+                        : `After ${ps.occurrences ?? '—'} occurrence(s)`;
+                    const runsLabel =
+                      ps.ends_type === 'after'
+                        ? `${ps.occurrences_run ?? 0} / ${ps.occurrences ?? '—'}`
+                        : `${ps.occurrences_run ?? 0}`;
+                    return (
+                      <>
+                        <Row label="Start (IST)">
+                          <div className="flex items-center gap-2 text-[#6D5EF5] font-bold text-sm">
+                            <Clock className="w-3.5 h-3.5" />
+                            {hasSchedule ? fmt(campaign.publishDetails.scheduled_at) : <span className="text-gray-400 italic">Not yet set</span>}
+                          </div>
+                        </Row>
+                        <Row label="Interval"    value={ps.interval ? ps.interval.charAt(0).toUpperCase() + ps.interval.slice(1) : '—'} />
+                        <Row label="Frequency"   value={`Every ${ps.frequency ?? 1} ${unit}`} />
+                        <Row label="Ends"        value={endsLabel} />
+                        <Row label="Runs Done"   value={runsLabel} />
+                        {campaign.scheduleStatus !== 'Completed' && ps.next_run_at && (
+                          <Row label="Next Run (IST)">
+                            <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-bold text-sm">
+                              <Clock className="w-3.5 h-3.5" />
+                              {fmt(ps.next_run_at)}
+                            </div>
+                          </Row>
+                        )}
+                      </>
+                    );
+                  })()}
+
                   {campaign.publishDetails?.published_at && (
                     <Row label="Published At" value={fmt(campaign.publishDetails.published_at)} />
                   )}

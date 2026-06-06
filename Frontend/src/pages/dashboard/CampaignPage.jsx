@@ -191,36 +191,117 @@ function DeleteDialog({ open, onClose, onConfirm, name }) {
   );
 }
 
-// ── Publish Details Dialog ─────────────────────────────────────────────────────
+// ── Publish Details Dialog ────────────────────────────────────────────────────────
 function PublishDialog({ open, onClose, onConfirm }) {
-  const now    = new Date();
-  const pad    = (n) => String(n).padStart(2, "0");
-  const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-  const timeStr  = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  // IST helpers — build min date string and current IST time
+  const getISTDateStr = () =>
+    new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Kolkata' }).format(new Date());
+  const getISTTimeStr = () =>
+    new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false,
+    }).format(new Date()).replace('.', ':');
 
-  const [date, setDate] = useState(todayStr);
-  const [time, setTime] = useState(timeStr);
+  // ── State ──────────────────────────────────────────────────────────────────
+  const [recurrence, setRecurrence] = useState('one_time');
+
+  // One-time fields
+  const [date, setDate] = useState('');
+  const [time, setTime] = useState('');
+
+  // Periodic fields
+  const [interval, setIntervalVal]    = useState('daily');
+  const [frequency, setFrequency]     = useState(1);
+  const [startDate, setStartDate]     = useState('');
+  const [startTime, setStartTime]     = useState('');
+  const [endsType, setEndsType]       = useState('after');
+  const [endDate, setEndDate]         = useState('');
+  const [endTime, setEndTime]         = useState('');
+  const [occurrences, setOccurrences] = useState(1);
+
   const [saving, setSaving] = useState(false);
+  const [error, setError]   = useState('');
 
   if (!open) return null;
 
+  const minDate      = getISTDateStr();
+  const intervalUnit = interval === 'hourly' ? 'hour(s)' : interval === 'weekly' ? 'week(s)' : 'day(s)';
+
+  // ── Validation ─────────────────────────────────────────────────────────────
+  const isFuture = (d, t) => {
+    if (!d || !t) return false;
+    return new Date(`${d}T${t}:00+05:30`) > new Date();
+  };
+  const isValid = () => {
+    if (recurrence === 'one_time') return isFuture(date, time);
+    if (!isFuture(startDate, startTime)) return false;
+    if (endsType === 'on') {
+      if (!endDate || !endTime) return false;
+      return new Date(`${endDate}T${endTime}:00+05:30`) > new Date(`${startDate}T${startTime}:00+05:30`);
+    }
+    if (endsType === 'after') return Number(occurrences) >= 1;
+    return false;
+  };
+
   const handleConfirm = async () => {
+    setError('');
+    if (!isValid()) {
+      setError(
+        recurrence === 'one_time'
+          ? 'Date/time must be in the future (IST).'
+          : endsType === 'on'
+          ? 'End date/time must be after the start date/time.'
+          : 'Please fill in all required fields. Start time must be in the future (IST).'
+      );
+      return;
+    }
     setSaving(true);
     try {
-      const scheduled_at = new Date(`${date}T${time}:00`).toISOString();
-      await onConfirm({ scheduled_at });
+      let payload;
+      if (recurrence === 'one_time') {
+        payload = {
+          scheduled_at: new Date(`${date}T${time}:00+05:30`).toISOString(),
+        };
+      } else {
+        payload = {
+          schedule_type: 'periodic',
+          scheduled_at:  new Date(`${startDate}T${startTime}:00+05:30`).toISOString(),
+          periodic_settings: {
+            interval:  interval,
+            frequency: Number(frequency),
+            ends_type: endsType,
+            ...(endsType === 'on'    && { end_date:    new Date(`${endDate}T${endTime}:00+05:30`).toISOString() }),
+            ...(endsType === 'after' && { occurrences: Number(occurrences) }),
+          },
+        };
+      }
+      await onConfirm(payload);
     } finally {
       setSaving(false);
     }
   };
 
+  // ── Style helpers ──────────────────────────────────────────────────────────
+  const inp = 'w-full px-3 py-2.5 text-sm rounded-xl border border-[#E4E7EC] dark:border-[#2A2F3A] bg-[#F7F8FC] dark:bg-[#0F1117] text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-[#6D5EF5] transition-all';
+  const radioCard = (sel) =>
+    `flex items-center gap-2.5 px-4 py-3 rounded-xl border-2 transition-all cursor-pointer ${
+      sel ? 'border-[#6D5EF5] bg-[#6D5EF5]/8 dark:bg-[#6D5EF5]/10'
+          : 'border-[#E4E7EC] dark:border-[#2A2F3A] hover:border-[#6D5EF5]/40'
+    }`;
+  const dot = (sel) =>
+    `w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+      sel ? 'border-[#6D5EF5]' : 'border-gray-300 dark:border-gray-600'
+    }`;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-      <div className="relative bg-white dark:bg-[#161B22] rounded-2xl border border-[#E4E7EC] dark:border-[#2A2F3A] shadow-2xl w-full max-w-lg"
-        onClick={e => e.stopPropagation()}>
+      <div
+        className="relative bg-white dark:bg-[#161B22] rounded-2xl border border-[#E4E7EC] dark:border-[#2A2F3A] shadow-2xl w-full max-w-lg flex flex-col"
+        style={{ maxHeight: '90vh' }}
+        onClick={e => e.stopPropagation()}
+      >
         {/* Header */}
-        <div className="px-6 pt-5 pb-4 border-b border-[#E4E7EC] dark:border-[#2A2F3A] flex items-start justify-between">
+        <div className="px-6 pt-5 pb-4 border-b border-[#E4E7EC] dark:border-[#2A2F3A] flex items-start justify-between flex-shrink-0">
           <div>
             <h2 className="font-semibold text-gray-900 dark:text-gray-100">Set Publish Details</h2>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Select a type of trigger for your campaign.</p>
@@ -232,71 +313,192 @@ function PublishDialog({ open, onClose, onConfirm }) {
         </div>
 
         {/* Body */}
-        <div className="p-6 space-y-5">
-          {/* Trigger type */}
+        <div className="p-6 space-y-5 overflow-y-auto flex-1">
+
+          {/* Trigger Type — Time-Based locked, Event-Based disabled */}
           <div>
             <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Trigger Type</p>
             <div className="grid grid-cols-2 gap-3">
-              <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl border-2 border-[#6D5EF5] bg-[#6D5EF5]/8 dark:bg-[#6D5EF5]/10 cursor-pointer">
-                <div className="w-4 h-4 rounded-full border-2 border-[#6D5EF5] flex items-center justify-center">
-                  <div className="w-2 h-2 rounded-full bg-[#6D5EF5]" />
-                </div>
+              <div className={radioCard(true)}>
+                <div className={dot(true)}><div className="w-2 h-2 rounded-full bg-[#6D5EF5]" /></div>
                 <span className="text-sm font-semibold text-[#6D5EF5]">Time-Based</span>
               </div>
-              <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl border-2 border-[#E4E7EC] dark:border-[#2A2F3A] opacity-50 cursor-not-allowed">
+              <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl border-2 border-[#E4E7EC] dark:border-[#2A2F3A] opacity-40 cursor-not-allowed">
                 <div className="w-4 h-4 rounded-full border-2 border-gray-300 dark:border-gray-600" />
                 <span className="text-sm font-medium text-gray-500">Event-Based</span>
               </div>
             </div>
           </div>
 
-          {/* Recurrence */}
+          {/* Recurrence — both interactive */}
           <div>
             <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Recurrence</p>
             <div className="grid grid-cols-2 gap-3">
-              <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl border-2 border-[#6D5EF5] bg-[#6D5EF5]/8 dark:bg-[#6D5EF5]/10 cursor-pointer">
-                <div className="w-4 h-4 rounded-full border-2 border-[#6D5EF5] flex items-center justify-center">
-                  <div className="w-2 h-2 rounded-full bg-[#6D5EF5]" />
+              <button type="button" onClick={() => { setRecurrence('one_time'); setError(''); }}
+                className={radioCard(recurrence === 'one_time')}>
+                <div className={dot(recurrence === 'one_time')}>
+                  {recurrence === 'one_time' && <div className="w-2 h-2 rounded-full bg-[#6D5EF5]" />}
                 </div>
-                <span className="text-sm font-semibold text-[#6D5EF5]">One Time</span>
-              </div>
-              <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl border-2 border-[#E4E7EC] dark:border-[#2A2F3A] opacity-50 cursor-not-allowed">
-                <div className="w-4 h-4 rounded-full border-2 border-gray-300 dark:border-gray-600" />
-                <span className="text-sm font-medium text-gray-500">Periodic</span>
-              </div>
+                <span className={`text-sm font-medium ${ recurrence === 'one_time' ? 'text-[#6D5EF5] font-semibold' : 'text-gray-700 dark:text-gray-300'}`}>
+                  One Time
+                </span>
+              </button>
+              <button type="button" onClick={() => { setRecurrence('periodic'); setError(''); }}
+                className={radioCard(recurrence === 'periodic')}>
+                <div className={dot(recurrence === 'periodic')}>
+                  {recurrence === 'periodic' && <div className="w-2 h-2 rounded-full bg-[#6D5EF5]" />}
+                </div>
+                <span className={`text-sm font-medium ${ recurrence === 'periodic' ? 'text-[#6D5EF5] font-semibold' : 'text-gray-700 dark:text-gray-300'}`}>
+                  Periodic
+                </span>
+              </button>
             </div>
           </div>
 
-          {/* Date + Time */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Date</p>
-              <div className="relative">
-                <input type="date" value={date} onChange={e => setDate(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2.5 text-sm rounded-xl border border-[#E4E7EC] dark:border-[#2A2F3A] bg-[#F7F8FC] dark:bg-[#0F1117] text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-[#6D5EF5] transition-all" />
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">📅</span>
+          {/* ── One-Time: Date + Time ── */}
+          {recurrence === 'one_time' && (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Date</p>
+                  <div className="relative">
+                    <input type="date" value={date} min={minDate}
+                      onChange={e => { setDate(e.target.value); setError(''); }}
+                      className={inp + ' pl-9'} />
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">📅</span>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Time</p>
+                  <div className="relative">
+                    <input type="time" value={time}
+                      onChange={e => { setTime(e.target.value); setError(''); }}
+                      className={inp + ' pl-9'} />
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🕐</span>
+                  </div>
+                </div>
+              </div>
+              <p className="text-xs text-gray-400 dark:text-gray-500">🕐 All times in IST (UTC+5:30)</p>
+            </>
+          )}
+
+          {/* ── Periodic: Interval, Frequency, Start, Ends ── */}
+          {recurrence === 'periodic' && (
+            <div className="space-y-4">
+
+              {/* Interval + Frequency */}
+              <div className="flex items-end gap-3">
+                <div>
+                  <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Interval</p>
+                  <select value={interval} onChange={e => setIntervalVal(e.target.value)}
+                    className={inp + ' w-28'}>
+                    <option value="hourly">Hourly</option>
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                  </select>
+                </div>
+                <div className="flex-1">
+                  <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Frequency</p>
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-gray-500 dark:text-gray-400 whitespace-nowrap">Every</span>
+                    <input type="number" min={1} value={frequency}
+                      onChange={e => setFrequency(Math.max(1, Number(e.target.value)))}
+                      className={inp + ' w-16 text-center'} />
+                    <span className="text-gray-500 dark:text-gray-400 whitespace-nowrap">{intervalUnit}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Start Date + Time */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Start Date</p>
+                  <div className="relative">
+                    <input type="date" value={startDate} min={minDate}
+                      onChange={e => { setStartDate(e.target.value); setError(''); }}
+                      className={inp + ' pl-9'} />
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">📅</span>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Start Time</p>
+                  <div className="relative">
+                    <input type="time" value={startTime}
+                      onChange={e => { setStartTime(e.target.value); setError(''); }}
+                      className={inp + ' pl-9'} />
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🕐</span>
+                  </div>
+                </div>
+              </div>
+              <p className="text-xs text-gray-400 dark:text-gray-500">🕐 All times in IST (UTC+5:30)</p>
+
+              {/* Ends */}
+              <div>
+                <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">Ends</p>
+                <div className="flex items-center gap-5 mb-3">
+                  {[['on', 'On'], ['after', 'After']].map(([val, label]) => (
+                    <label key={val} className="flex items-center gap-2 cursor-pointer"
+                      onClick={() => { setEndsType(val); setError(''); }}>
+                      <div className={dot(endsType === val)}>
+                        {endsType === val && <div className="w-2 h-2 rounded-full bg-[#6D5EF5]" />}
+                      </div>
+                      <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
+                    </label>
+                  ))}
+                </div>
+
+                {endsType === 'on' && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">End Date</p>
+                      <div className="relative">
+                        <input type="date" value={endDate} min={startDate || minDate}
+                          onChange={e => { setEndDate(e.target.value); setError(''); }}
+                          className={inp + ' pl-9'} />
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">📅</span>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">End Time</p>
+                      <div className="relative">
+                        <input type="time" value={endTime}
+                          onChange={e => { setEndTime(e.target.value); setError(''); }}
+                          className={inp + ' pl-9'} />
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🕐</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {endsType === 'after' && (
+                  <div className="flex items-center gap-2.5">
+                    <input type="number" min={1} value={occurrences}
+                      onChange={e => setOccurrences(Math.max(1, Number(e.target.value)))}
+                      className={inp + ' w-24 text-center'} />
+                    <span className="text-sm text-gray-500 dark:text-gray-400">occurrences</span>
+                  </div>
+                )}
               </div>
             </div>
-            <div>
-              <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Time</p>
-              <div className="relative">
-                <input type="time" value={time} onChange={e => setTime(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2.5 text-sm rounded-xl border border-[#E4E7EC] dark:border-[#2A2F3A] bg-[#F7F8FC] dark:bg-[#0F1117] text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-[#6D5EF5] transition-all" />
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🕐</span>
-              </div>
-            </div>
-          </div>
+          )}
+
+          {/* Error message */}
+          {error && (
+            <p className="text-xs text-red-500 dark:text-red-400 flex items-center gap-1">
+              ⚠️ {error}
+            </p>
+          )}
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-[#E4E7EC] dark:border-[#2A2F3A] flex gap-3">
+        <div className="px-6 py-4 border-t border-[#E4E7EC] dark:border-[#2A2F3A] flex gap-3 flex-shrink-0">
           <button onClick={onClose}
             className="flex-1 py-2.5 text-sm border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-xl text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors font-medium">
             Cancel
           </button>
-          <button onClick={handleConfirm} disabled={saving}
+          <button onClick={handleConfirm} disabled={saving || !isValid()}
             className="flex-1 py-2.5 text-sm bg-gradient-to-r from-[#6D5EF5] to-[#8B7CFF] text-white rounded-xl font-semibold hover:shadow-lg hover:shadow-[#6D5EF5]/30 transition-all disabled:opacity-60 disabled:cursor-not-allowed">
-            {saving ? "Saving…" : "Confirm"}
+            {saving ? 'Saving…' : 'Confirm'}
           </button>
         </div>
       </div>
@@ -361,16 +563,15 @@ export default function CampaignPage() {
     }
   };
 
-  const handleSetPublish = async ({ scheduled_at }) => {
-    const targetId   = publishTarget.id;
-    const targetName = publishTarget.name;
+  const handleSetPublish = async (payload) => {
+    const targetId = publishTarget.id;
     try {
-      const updated = await setPublishDetails(targetId, { scheduled_at });
-      addToast("Publish details saved! Click Publish to go live.", "success");
+      const updated = await setPublishDetails(targetId, payload);
+      addToast('Publish details saved! Click Publish to go live.', 'success');
       // Auto-open the view drawer so admin can click Publish
       setViewTarget(updated);
     } catch (err) {
-      addToast(`Failed to save: ${err.message}`, "error");
+      addToast(`Failed to save: ${err.message}`, 'error');
     } finally {
       setPublishTarget(null);
     }

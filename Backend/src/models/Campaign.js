@@ -46,6 +46,17 @@ const campaignSchema = new Schema(
       published_at:  { type: Date },  // timestamp of when admin clicked the final Publish button
     },
 
+    // ── Periodic scheduling settings ──────────────────────────────────────────
+    periodic_settings: {
+      interval:        { type: String, enum: ['hourly', 'daily', 'weekly'], default: 'daily' },
+      frequency:       { type: Number, default: 1, min: 1 },
+      ends_type:       { type: String, enum: ['on', 'after'] },
+      end_date:        { type: Date },           // only when ends_type === 'on'
+      occurrences:     { type: Number },         // max runs, only when ends_type === 'after'
+      occurrences_run: { type: Number, default: 0 }, // incremented by scheduler on each run
+      next_run_at:     { type: Date },           // scheduler advances this after each run
+    },
+
     // ── Content ───────────────────────────────────────────────────────────────
     template_id: {
       type: Schema.Types.ObjectId,
@@ -104,6 +115,7 @@ const campaignSchema = new Schema(
 // Index for fast list queries
 campaignSchema.index({ created_by: 1, status: 1 });
 campaignSchema.index({ schedule_status: 1 });
+campaignSchema.index({ schedule_type: 1, schedule_status: 1, 'periodic_settings.next_run_at': 1 });
 
 const Campaign = model('Campaign', campaignSchema);
 
