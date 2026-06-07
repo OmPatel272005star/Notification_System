@@ -1,9 +1,9 @@
-import cron          from 'node-cron';
-import Campaign       from '../models/Campaign.js';
-import Connection     from '../models/Connection.js';
-import Template       from '../models/Template.js';
-import Audience       from '../models/Audience.js';
-import { sendEmailViaConnection } from '../controller/ConnectionController.js';
+import cron         from 'node-cron';
+import Campaign      from '../campaign/Campaign.js';
+import Connection    from '../connection/Connection.js';
+import Template      from '../template/Template.js';
+import Audience      from '../audience/Audience.js';
+import { sendEmailViaConnection } from '../connection/ConnectionController.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -171,7 +171,7 @@ async function runPeriodicCampaigns() {
       ps.occurrences_run = (ps.occurrences_run || 0) + 1;
 
       // Compute next_run_at (base off the stored next_run_at to avoid drift)
-      const intervalMs  = getIntervalMs(ps.interval, ps.frequency);
+      const intervalMs   = getIntervalMs(ps.interval, ps.frequency);
       const currentRunAt = new Date(ps.next_run_at);
       const nextRunAt    = new Date(currentRunAt.getTime() + intervalMs);
 

@@ -1,6 +1,6 @@
 import express from "express";
-import { authMiddleware } from "../middleware/authMiddleware.js";
-import { adminOnly }      from "../middleware/roleMiddleware.js";  // reads role from JWT — no hardcoded string
+import { authMiddleware } from "../../shared/middleware/authMiddleware.js";
+import { adminOnly }      from "../../shared/middleware/roleMiddleware.js";
 
 import {
   addUser,
@@ -8,7 +8,7 @@ import {
   updateUser,
   toggleStatus,
   getBulkUser,
-} from "../controller/UserController.js";
+} from "./UserController.js";
 
 const router = express.Router();
 

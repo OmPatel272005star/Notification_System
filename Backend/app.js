@@ -1,15 +1,17 @@
 import express from 'express'
 import dotenv from 'dotenv'
 import cors from 'cors'
-import connectDB from './src/config/db.js'
-import AuthRouter     from './src/router/AuthRouter.js'
-import UserRouter     from './src/router/UserRouter.js'
-import ProfileRouter  from './src/router/ProfileRouter.js'
-import TemplateRouter from './src/router/TemplateRouter.js'
-import AudienceRouter from './src/router/AudienceRouter.js'
-import CampaignRouter    from './src/router/CampaignRouter.js'
-import ConnectionRouter  from './src/router/ConnectionRouter.js'
-import { startCampaignScheduler } from './src/workers/campaignScheduler.js'
+
+// ── Phase 1: imports from new service-boundary structure ──────────────────────
+import connectDB         from './src/shared/config/db.js'
+import AuthRouter        from './src/services/auth/AuthRouter.js'
+import UserRouter        from './src/services/user/UserRouter.js'
+import ProfileRouter     from './src/services/user/ProfileRouter.js'
+import TemplateRouter    from './src/services/template/TemplateRouter.js'
+import AudienceRouter    from './src/services/audience/AudienceRouter.js'
+import CampaignRouter    from './src/services/campaign/CampaignRouter.js'
+import ConnectionRouter  from './src/services/connection/ConnectionRouter.js'
+import { startCampaignScheduler } from './src/services/scheduler/campaignScheduler.js'
 
 dotenv.config()
 

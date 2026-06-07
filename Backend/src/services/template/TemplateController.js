@@ -1,4 +1,4 @@
-import Template from '../models/Template.js';
+import Template from './Template.js';
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Helper — normalises a frontend channel label to the DB enum value

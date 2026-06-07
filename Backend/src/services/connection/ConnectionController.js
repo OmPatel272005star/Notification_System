@@ -3,7 +3,7 @@ import Connection, {
   encryptSecret,
   decryptSecret,
   maskSecret,
-}                                      from '../models/Connection.js';
+}                                      from './Connection.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal helper – build a safe (masked) connection object for API responses
@@ -69,7 +69,7 @@ async function sendViaSMTP({ host, port, user, pass, secure, fromEmail, fromName
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Exported helper used by CampaignController to send a single message
+// Exported helper used by CampaignController / scheduler to send a single message
 // ─────────────────────────────────────────────────────────────────────────────
 export async function sendEmailViaConnection(conn, { toEmail, toName, subject, html, text }) {
   const fromEmail = conn.email;

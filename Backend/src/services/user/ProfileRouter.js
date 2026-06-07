@@ -1,6 +1,6 @@
 import express from 'express';
-import { authMiddleware } from '../middleware/authMiddleware.js';
-import { getMyProfile, updateMyProfile } from '../controller/ProfileController.js';
+import { authMiddleware } from '../../shared/middleware/authMiddleware.js';
+import { getMyProfile, updateMyProfile } from './ProfileController.js';
 
 const router = express.Router();
 

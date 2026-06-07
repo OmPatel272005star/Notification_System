@@ -1,4 +1,4 @@
-import User from '../models/User.js';
+import User from '../../shared/models/User.js';
 
 /**
  * GET /profile/me

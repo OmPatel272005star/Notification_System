@@ -1,4 +1,4 @@
-import Audience from '../models/Audience.js';
+import Audience from './Audience.js';
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * GET /audience

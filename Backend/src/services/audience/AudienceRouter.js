@@ -1,6 +1,6 @@
 import express from 'express';
-import { authMiddleware } from '../middleware/authMiddleware.js';
-import { adminOnly } from '../middleware/roleMiddleware.js';
+import { authMiddleware } from '../../shared/middleware/authMiddleware.js';
+import { adminOnly } from '../../shared/middleware/roleMiddleware.js';
 
 import {
   getAllAudience,
@@ -9,7 +9,7 @@ import {
   updateAudience,
   deleteAudience,
   getAudienceTimeline
-} from '../controller/AudienceController.js';
+} from './AudienceController.js';
 
 const router = express.Router();
 

@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
-import User from "../models/User.js";
-import { generateToken } from "../config/jwt.js";
+import User from "../../shared/models/User.js";
+import { generateToken } from "../../shared/config/jwt.js";
 
 /**
  * POST /auth/signup

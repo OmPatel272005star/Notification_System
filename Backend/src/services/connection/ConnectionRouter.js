@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authMiddleware } from '../middleware/authMiddleware.js';
+import { authMiddleware } from '../../shared/middleware/authMiddleware.js';
 import {
   createConnection,
   getAllConnections,
@@ -7,7 +7,7 @@ import {
   updateConnection,
   deleteConnection,
   testConnection,
-} from '../controller/ConnectionController.js';
+} from './ConnectionController.js';
 
 const router = Router();
 

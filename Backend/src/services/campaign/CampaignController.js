@@ -1,8 +1,8 @@
-import Campaign    from '../models/Campaign.js';
-import Connection  from '../models/Connection.js';
-import Template    from '../models/Template.js';
-import Audience    from '../models/Audience.js';
-import { sendEmailViaConnection } from './ConnectionController.js';
+import Campaign    from './Campaign.js';
+import Connection  from '../connection/Connection.js';
+import Template    from '../template/Template.js';
+import Audience    from '../audience/Audience.js';
+import { sendEmailViaConnection } from '../connection/ConnectionController.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
