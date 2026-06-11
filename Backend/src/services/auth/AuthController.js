@@ -1,6 +1,8 @@
 import bcrypt from "bcryptjs";
+import jwt    from "jsonwebtoken";
 import User from "../../shared/models/User.js";
 import { generateToken } from "../../shared/config/jwt.js";
+import { redis } from "../../shared/config/redis.js";
 
 /**
  * POST /auth/signup
@@ -140,4 +142,37 @@ const login = async (req, res) => {
     }
 };
 
-export { signup, login };
+/**
+ * POST /auth/logout
+ * Protected — invalidates the current JWT by storing it in Redis blocklist.
+ * The token is rejected by authMiddleware on all subsequent requests.
+ */
+const logout = async (req, res) => {
+    try {
+        const token = req.token; // set by authMiddleware
+        if (!token) {
+            return res.status(400).json({ success: false, message: 'No token to invalidate.' });
+        }
+
+        // Calculate remaining TTL of the token so Redis key expires naturally
+        let ttl = 86400; // fallback: 24h
+        try {
+            const decoded = jwt.decode(token);
+            if (decoded?.exp) {
+                ttl = Math.max(1, decoded.exp - Math.floor(Date.now() / 1000));
+            }
+        } catch { /* use fallback TTL */ }
+
+        await redis.set(`blocked:${token}`, '1', 'EX', ttl);
+
+        return res.status(200).json({
+            success: true,
+            message: 'Logged out successfully. Token has been invalidated.',
+        });
+    } catch (err) {
+        console.error('[logout]', err);
+        return res.status(500).json({ success: false, message: 'Internal Server Error' });
+    }
+};
+
+export { signup, login, logout };

@@ -1,6 +1,9 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Phase 2 — Docker Compose: Full local stack
-# Services: MongoDB · Redis · Backend · Frontend
+# Phase 4 — Docker Compose: Full local stack with Kafka (KRaft, no Zookeeper)
+# Services: MongoDB · Redis · Kafka (KRaft) · Backend · Frontend
+#
+# KRaft replaces Zookeeper as Kafka's consensus mechanism (Kafka 3.3+).
+# One fewer container, faster startup, no port 2181 to manage.
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
@@ -21,7 +24,7 @@ services:
       retries: 5
       start_period: 20s
 
-  # ── Redis (ready for Phase 3 — caching & JWT blocklist) ──────────────────────
+  # ── Redis (caching & JWT blocklist — Phase 3) ─────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: ns_redis
@@ -35,7 +38,52 @@ services:
       retries: 5
       start_period: 10s
 
-  # ── Backend (Express + Mongoose) ─────────────────────────────────────────────
+  # ── Kafka — KRaft mode (single broker+controller, NO Zookeeper) ─────────────
+  # KRaft is production-ready since Kafka 3.3+ and is the default in Kafka 4.x.
+  # KAFKA_PROCESS_ROLES: broker,controller → one container runs both roles.
+  # Interview talking point:
+  #   "KRaft removes Zookeeper entirely — no split-brain risk, faster leader
+  #    election, one fewer container and port to manage. Deprecated as of 3.7."
+  kafka:
+    image: confluentinc/cp-kafka:7.7.0
+    container_name: ns_kafka
+    restart: unless-stopped
+    ports:
+      - "9092:9092"
+    environment:
+      # KRaft identity & roles
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+
+      # Listeners: PLAINTEXT for clients, CONTROLLER for internal Raft consensus
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+
+      # Single-node quorum — this broker is its own controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+
+      # Single-replica topics (fine for single-node dev)
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
+      # Auto-create topics used by the notification system
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+      # Fixed base64-encoded cluster UUID (required for KRaft)
+      # Generate a fresh one with:
+      #   docker run --rm confluentinc/cp-kafka:7.7.0 kafka-storage random-uuid
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+
+  # ── Backend (Express + Mongoose + Redis + Kafka) ──────────────────────────
   backend:
     build:
       context: ./Backend
@@ -44,29 +92,31 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
-    # Load secrets from the existing .env file (includes Atlas MONGO_URI, JWT_SECRET, ENCRYPTION_KEY)
+    # Load secrets from the existing .env file (Atlas MONGO_URI, JWT_SECRET, ENCRYPTION_KEY, etc.)
     env_file:
       - ./Backend/.env
-    # Only add vars not already in .env (Atlas MONGO_URI stays from .env)
+    # Only add vars not already in .env
     environment:
       REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:9092
       PORT: 3000
       # Match local dev timezone so naive datetime strings are parsed correctly.
-      # Without this, Docker (UTC) misinterprets IST datetimes by +5:30 hours.
       TZ: Asia/Kolkata
     depends_on:
       mongo:
         condition: service_healthy
       redis:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 30s
 
-  # ── Frontend (Vite React → Nginx) ────────────────────────────────────────────
+  # ── Frontend (Vite React → Nginx) ────────────────────────────────────────
   frontend:
     build:
       context: ./Frontend
@@ -81,7 +131,7 @@ services:
     depends_on:
       - backend
 
-# ── Volumes ───────────────────────────────────────────────────────────────────
+# ── Volumes ──────────────────────────────────────────────────────────────────
 volumes:
   mongo_data:
     driver: local

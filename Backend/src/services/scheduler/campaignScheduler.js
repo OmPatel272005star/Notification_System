@@ -1,11 +1,9 @@
 import Campaign      from '../campaign/Campaign.js';
-import Connection    from '../connection/Connection.js';
-import Template      from '../template/Template.js';
-import Audience      from '../audience/Audience.js';
-import { sendEmailViaConnection } from '../connection/ConnectionController.js';
+import { producer }  from '../../shared/config/kafka.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helpers
+// Phase 4 — Scheduler emits campaign.trigger Kafka events instead of sending
+// emails directly. The Notification Dispatcher consumer handles delivery.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -23,71 +21,27 @@ function getIntervalMs(interval, frequency = 1) {
 }
 
 /**
- * Core send helper — sends emails to all active contacts for a campaign.
- * Returns { sent, failed }.
+ * Emit a campaign.trigger event to Kafka.
+ * The Notification Dispatcher consumer will pick this up and send the emails.
  */
-async function sendCampaignEmails(campaign) {
-  const conn = campaign.connection_id
-    ? await Connection.findById(campaign.connection_id)
-    : null;
-
-  const template = campaign.template_id
-    ? await Template.findById(campaign.template_id)
-    : null;
-
-  const contacts = campaign.audience_ids?.length
-    ? await Audience.find({
-        _id:    { $in: campaign.audience_ids },
-        status: 'active',
-      }).select('first_name last_name emails')
-    : [];
-
-  if (!conn || !template || contacts.length === 0) {
-    console.warn(`[scheduler] "${campaign.name}" — missing connection/template/audience. Skipping send.`);
-    return { sent: 0, failed: 0 };
-  }
-
-  const htmlBody = template.content?.html_body || '';
-  const subject  = campaign.email_settings?.subject ||
-                   template.content?.subject        ||
-                   campaign.name;
-
-  let sent = 0, failed = 0;
-
-  for (const contact of contacts) {
-    const primaryEmail = contact.emails?.find(e => e.is_primary)?.email
-                      || contact.emails?.[0]?.email;
-    if (!primaryEmail) { failed++; continue; }
-
-    const fullName    = `${contact.first_name} ${contact.last_name}`.trim();
-    const personalised = htmlBody
-      .replace(/\{\{first_name\}\}/gi, contact.first_name)
-      .replace(/\{\{last_name\}\}/gi,  contact.last_name)
-      .replace(/\{\{full_name\}\}/gi,   fullName)
-      .replace(/\{\{email\}\}/gi,       primaryEmail);
-
-    try {
-      await sendEmailViaConnection(conn, {
-        toEmail: primaryEmail,
-        toName:  fullName,
-        subject,
-        html:    personalised || undefined,
-        text:    template.content?.text_preview || undefined,
-      });
-      sent++;
-      console.log(`[scheduler] ✅ Sent to ${primaryEmail}`);
-    } catch (err) {
-      failed++;
-      console.error(`[scheduler] ❌ Failed to ${primaryEmail}:`, err.message);
-    }
-  }
-
-  return { sent, failed };
+async function kafkaEmitTrigger(campaign, triggerType) {
+  await producer.send({
+    topic: 'campaign.trigger',
+    messages: [{
+      key:   campaign._id.toString(),
+      value: JSON.stringify({
+        campaignId:  campaign._id,
+        triggerType, // 'scheduled' | 'periodic'
+      }),
+    }],
+  });
+  console.log(`[scheduler] 📤 campaign.trigger emitted — campaign="${campaign.name}" (${campaign._id}) type=${triggerType}`);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // One-Time Campaign Runner
-// Finds published one-time campaigns whose scheduled_at <= now and fires them.
+// Finds published one-time campaigns whose scheduled_at <= now,
+// marks them live, then emits campaign.trigger to Kafka.
 // ─────────────────────────────────────────────────────────────────────────────
 async function runScheduledCampaigns() {
   const now = new Date();
@@ -105,19 +59,19 @@ async function runScheduledCampaigns() {
   for (const campaign of due) {
     console.log(`[scheduler] Processing one-time "${campaign.name}" (${campaign._id})`);
     try {
-      // Mark live immediately to prevent double-fire
+      // Mark live immediately to prevent double-fire on next tick
       campaign.schedule_status = 'live';
       await campaign.save();
 
-      const { sent, failed } = await sendCampaignEmails(campaign);
+      // Emit Kafka event — delivery is handled async by Notification Dispatcher
+      await kafkaEmitTrigger(campaign, 'scheduled');
 
-      campaign.delivery_stats.sent   = (campaign.delivery_stats.sent   || 0) + sent;
-      campaign.delivery_stats.failed = (campaign.delivery_stats.failed || 0) + failed;
-      campaign.schedule_status       = 'completed';
+      // Mark completed — delivery_stats will be incremented via delivery.report consumer
+      campaign.schedule_status = 'completed';
       campaign.publish_details.published_at = new Date();
       await campaign.save();
 
-      console.log(`[scheduler] One-time "${campaign.name}" done — sent: ${sent}, failed: ${failed}`);
+      console.log(`[scheduler] One-time "${campaign.name}" — trigger emitted, marked completed.`);
     } catch (err) {
       console.error(`[scheduler] Error processing one-time campaign ${campaign._id}:`, err.message);
       // Reset so it can retry next tick
@@ -130,14 +84,14 @@ async function runScheduledCampaigns() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Periodic Campaign Runner
-// Finds published periodic campaigns whose next_run_at <= now and fires them,
-// then advances next_run_at or marks completed based on end condition.
+// Finds published periodic campaigns whose next_run_at <= now, marks live,
+// emits campaign.trigger to Kafka, then advances next_run_at or marks completed.
 //
 // Status lifecycle:
-//   Before next_run_at → 'scheduled'
-//   During send tick   → 'live'
-//   After send, more runs remain → 'scheduled' (reset)
-//   End condition met  → 'completed'
+//   Before next_run_at  → 'scheduled'
+//   During Kafka emit   → 'live'
+//   After emit, more runs remain → 'scheduled' (reset with new next_run_at)
+//   End condition met   → 'completed'
 // ─────────────────────────────────────────────────────────────────────────────
 async function runPeriodicCampaigns() {
   const now = new Date();
@@ -159,17 +113,14 @@ async function runPeriodicCampaigns() {
       campaign.schedule_status = 'live';
       await campaign.save();
 
-      // Send emails
-      const { sent, failed } = await sendCampaignEmails(campaign);
+      // Emit Kafka event — actual email sending by Notification Dispatcher
+      await kafkaEmitTrigger(campaign, 'periodic');
 
-      campaign.delivery_stats.sent   = (campaign.delivery_stats.sent   || 0) + sent;
-      campaign.delivery_stats.failed = (campaign.delivery_stats.failed || 0) + failed;
-
-      // Increment run counter
+      // Advance periodic settings (delivery_stats incremented via delivery.report consumer)
       const ps = campaign.periodic_settings;
       ps.occurrences_run = (ps.occurrences_run || 0) + 1;
 
-      // Compute next_run_at (base off the stored next_run_at to avoid drift)
+      // Compute next_run_at (anchored to stored next_run_at to avoid drift)
       const intervalMs   = getIntervalMs(ps.interval, ps.frequency);
       const currentRunAt = new Date(ps.next_run_at);
       const nextRunAt    = new Date(currentRunAt.getTime() + intervalMs);
@@ -190,14 +141,14 @@ async function runPeriodicCampaigns() {
           `[scheduler] Periodic "${campaign.name}" completed after ${ps.occurrences_run} run(s).`
         );
       } else {
-        ps.next_run_at        = nextRunAt;
+        ps.next_run_at           = nextRunAt;
         campaign.schedule_status = 'scheduled';
         console.log(
-          `[scheduler] Periodic "${campaign.name}" run #${ps.occurrences_run} done. Next: ${nextRunAt.toISOString()}`
+          `[scheduler] Periodic "${campaign.name}" run #${ps.occurrences_run} queued. Next: ${nextRunAt.toISOString()}`
         );
       }
 
-      // Mark the subdocument as modified so Mongoose saves it
+      // Mark subdocument modified so Mongoose persists it
       campaign.markModified('periodic_settings');
       await campaign.save();
     } catch (err) {
@@ -226,5 +177,5 @@ export function startCampaignScheduler() {
   // Fire every 60 seconds — simple, reliable, no timezone overhead
   setInterval(tick, 60 * 1000);
 
-  console.log('🕐 Campaign scheduler started — checking every minute for due campaigns.');
+  console.log('🕐 Campaign scheduler started — checking every minute (Kafka-backed since Phase 4).');
 }

@@ -3,6 +3,7 @@ import { authMiddleware } from "../../shared/middleware/authMiddleware.js";
 import { adminOnly }      from "../../shared/middleware/roleMiddleware.js";
 
 import {
+  getUserById,
   addUser,
   deleteUser,
   updateUser,
@@ -14,8 +15,9 @@ const router = express.Router();
 
 // ── Any authenticated user ─────────────────────────────────────────────────
 router.get("/getBulkUser", authMiddleware, getBulkUser);
+router.get("/:id",         authMiddleware, getUserById);   // Phase 3: cached single-user lookup
 
-// ── Admin-only (role is read from the JWT by adminOnly, not hardcoded here) ─
+// ── Admin-only ─────────────────────────────────────────────────────────────
 router.post(  "/add",        authMiddleware, adminOnly, addUser);
 router.put(   "/:id",        authMiddleware, adminOnly, updateUser);
 router.delete("/:id",        authMiddleware, adminOnly, deleteUser);
