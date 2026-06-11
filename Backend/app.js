@@ -23,6 +23,16 @@ app.use(express.json({ limit: '2mb' }))   // bumped for base64 avatars + GrapesJ
 
 await connectDB()
 
+// ── Health check (used by Docker Compose healthcheck & Phase 6 Prometheus) ──
+app.get('/health', (req, res) => {
+    res.json({
+        status:  'ok',
+        service: 'backend',
+        uptime:  process.uptime(),
+        timestamp: new Date().toISOString(),
+    })
+})
+
 // ── Public auth routes (no JWT required) ──────────────────────────────────
 app.use('/auth', AuthRouter)
 

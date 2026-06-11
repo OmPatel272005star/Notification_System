@@ -1,4 +1,3 @@
-import cron         from 'node-cron';
 import Campaign      from '../campaign/Campaign.js';
 import Connection    from '../connection/Connection.js';
 import Template      from '../template/Template.js';
@@ -215,14 +214,17 @@ async function runPeriodicCampaigns() {
 // Runs both one-time and periodic campaign checks on each tick.
 // ─────────────────────────────────────────────────────────────────────────────
 export function startCampaignScheduler() {
-  cron.schedule('* * * * *', async () => {
+  const tick = async () => {
     try {
       await runScheduledCampaigns();
       await runPeriodicCampaigns();
     } catch (err) {
       console.error('[scheduler] Unhandled error:', err.message);
     }
-  });
+  };
+
+  // Fire every 60 seconds — simple, reliable, no timezone overhead
+  setInterval(tick, 60 * 1000);
 
   console.log('🕐 Campaign scheduler started — checking every minute for due campaigns.');
 }
