@@ -131,6 +131,27 @@ services:
     depends_on:
       - backend
 
+  # ── Kafka UI — visual dashboard for topics & messages ────────────────────
+  # Browse: http://localhost:8080
+  # See live messages flowing through campaign.trigger and delivery.report.
+  # Interview demo: show topics, partitions, consumer group lag in real time.
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: ns_kafka_ui
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local-kraft
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      # Show topic messages in the UI (not just metadata)
+      KAFKA_CLUSTERS_0_AUDIT_TOPICAUDITENABLED: "false"
+      DYNAMIC_CONFIG_ENABLED: "true"
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+
 # ── Volumes ──────────────────────────────────────────────────────────────────
 volumes:
   mongo_data:

@@ -40,6 +40,7 @@ async function emitDeliveryReport(payload) {
     topic: 'delivery.report',
     messages: [{ value: JSON.stringify(payload) }],
   });
+  console.log(`[dispatcher] 📤 delivery.report emitted — campaign=${payload.campaignId} status=${payload.status}`);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -161,17 +162,43 @@ async function handleDeliveryReport(messageValue) {
 // ─────────────────────────────────────────────────────────────────────────────
 // startNotificationDispatcher()
 // Wire up both Kafka consumers and begin processing.
+//
+// Why the retry loop?
+// Kafka's KAFKA_AUTO_CREATE_TOPICS_ENABLE creates topics lazily — on first
+// produce/subscribe. On cold boot the broker may not yet have elected a leader
+// for the newly-created partitions, causing UNKNOWN_TOPIC_OR_PARTITION.
+// We retry up to 10 times (3 s apart) before giving up.
 // ─────────────────────────────────────────────────────────────────────────────
+
+async function subscribeWithRetry(consumer, topic, maxRetries = 10, delayMs = 3000) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await consumer.subscribe({ topic, fromBeginning: false });
+      console.log(`[dispatcher] ✅ Subscribed to topic "${topic}" (attempt ${attempt})`);
+      return;
+    } catch (err) {
+      const isRetriable = err.type === 'UNKNOWN_TOPIC_OR_PARTITION' || err.retriable;
+      if (isRetriable && attempt < maxRetries) {
+        console.warn(`[dispatcher] ⚠️  Subscribe to "${topic}" failed (${err.type || err.message}) — retry ${attempt}/${maxRetries} in ${delayMs}ms`);
+        await new Promise(r => setTimeout(r, delayMs));
+      } else {
+        console.error(`[dispatcher] ❌ Could not subscribe to "${topic}" after ${attempt} attempt(s):`, err.message);
+        throw err;
+      }
+    }
+  }
+}
 
 export async function startNotificationDispatcher() {
   // ── campaign.trigger consumer ──────────────────────────────────────────────
-  await dispatchConsumer.subscribe({
-    topic:         'campaign.trigger',
-    fromBeginning: false,   // only process new events from this point
-  });
+  await subscribeWithRetry(dispatchConsumer, 'campaign.trigger');
 
   dispatchConsumer.run({
     eachMessage: async ({ topic, partition, message }) => {
+      // ── Kafka event boundary log — visible in `docker compose logs backend` ──
+      console.log(
+        `[kafka] ⬇️  EVENT RECEIVED  topic=${topic}  partition=${partition}  offset=${message.offset}`
+      );
       try {
         await handleCampaignTrigger(message.value.toString());
       } catch (err) {
@@ -181,13 +208,14 @@ export async function startNotificationDispatcher() {
   });
 
   // ── delivery.report consumer ───────────────────────────────────────────────
-  await deliveryConsumer.subscribe({
-    topic:         'delivery.report',
-    fromBeginning: false,
-  });
+  await subscribeWithRetry(deliveryConsumer, 'delivery.report');
 
   deliveryConsumer.run({
     eachMessage: async ({ topic, partition, message }) => {
+      // ── Kafka event boundary log ──────────────────────────────────────────────
+      console.log(
+        `[kafka] ⬇️  EVENT RECEIVED  topic=${topic}  partition=${partition}  offset=${message.offset}`
+      );
       try {
         await handleDeliveryReport(message.value.toString());
       } catch (err) {

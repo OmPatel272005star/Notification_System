@@ -8,11 +8,40 @@ import { Kafka, logLevel } from 'kafkajs';
 
 const brokers = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
 
+// ── Custom logger: maps KafkaJS internal levels → clear console output ────────
+// This is what makes Kafka events visible in `docker compose logs backend`.
+// Without this, KafkaJS silently swallows INFO/DEBUG internally.
+const toLevel = {
+  [logLevel.ERROR]: '❌ KAFKA ERROR',
+  [logLevel.WARN]:  '⚠️  KAFKA WARN ',
+  [logLevel.INFO]:  'ℹ️  KAFKA INFO ',
+  [logLevel.DEBUG]: '🐛 KAFKA DEBUG',
+};
+
+function kafkaLogger(level) {
+  return ({ namespace, label, log }) => {
+    const { message, ...extra } = log;
+    // Only print extras if they carry useful info (skip empty / noise objects)
+    const hasExtra = Object.keys(extra).length > 0 &&
+                     !(extra.timestamp) &&     // skip bare timestamp fields
+                     JSON.stringify(extra) !== '{}';
+
+    const prefix = toLevel[level] || 'KAFKA';
+    const line   = `[${namespace}] ${message}`;
+    if (hasExtra) {
+      console.log(`${prefix}  ${line}`, JSON.stringify(extra));
+    } else {
+      console.log(`${prefix}  ${line}`);
+    }
+  };
+}
+
 export const kafka = new Kafka({
   clientId:  'notification-system',
   brokers,
-  // Suppress KafkaJS internal debug noise — keep WARN+ only
-  logLevel:  logLevel.WARN,
+  // INFO level → shows connect, produce, fetch (consume) events in backend logs
+  logLevel:  logLevel.INFO,
+  logCreator: () => kafkaLogger,
   // Retry config: exponential back-off, max 5 retries
   retry: {
     initialRetryTime: 300,
