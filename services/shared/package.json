@@ -1,0 +1,13 @@
+{
+  "name": "shared",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Shared config/middleware/models/utils copied into each microservice container at build time",
+  "dependencies": {
+    "mongoose":     "^9.6.2",
+    "ioredis":      "^5.6.1",
+    "kafkajs":      "^2.2.4",
+    "jsonwebtoken": "^9.0.2",
+    "dotenv":       "^16.4.5"
+  }
+}

@@ -1,30 +1,19 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Phase 4 — Docker Compose: Full local stack with Kafka (KRaft, no Zookeeper)
-# Services: MongoDB · Redis · Kafka (KRaft) · Backend · Frontend
+# Phase 5 — Docker Compose: Microservices Architecture
 #
-# KRaft replaces Zookeeper as Kafka's consensus mechanism (Kafka 3.3+).
-# One fewer container, faster startup, no port 2181 to manage.
+# 8 independent Node.js services + Nginx API Gateway + Redis + Kafka (KRaft)
+# MongoDB stays on Atlas (cloud) — NOT containerized.
+#
+# To run Phase 5 microservices:
+#   docker compose up --build
+#
+# To fall back to the Phase 4 monolith (Backend/ folder):
+#   docker compose -f docker-compose.monolith.yml up --build
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
 
-  # ── MongoDB ─────────────────────────────────────────────────────────────────
-  mongo:
-    image: mongo:7
-    container_name: ns_mongo
-    restart: unless-stopped
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongo_data:/data/db
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-      start_period: 20s
-
-  # ── Redis (caching & JWT blocklist — Phase 3) ─────────────────────────────
+  # ── Redis (JWT blocklist + user/list cache) ─────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: ns_redis
@@ -39,11 +28,6 @@ services:
       start_period: 10s
 
   # ── Kafka — KRaft mode (single broker+controller, NO Zookeeper) ─────────────
-  # KRaft is production-ready since Kafka 3.3+ and is the default in Kafka 4.x.
-  # KAFKA_PROCESS_ROLES: broker,controller → one container runs both roles.
-  # Interview talking point:
-  #   "KRaft removes Zookeeper entirely — no split-brain risk, faster leader
-  #    election, one fewer container and port to manage. Deprecated as of 3.7."
   kafka:
     image: confluentinc/cp-kafka:7.7.0
     container_name: ns_kafka
@@ -51,30 +35,17 @@ services:
     ports:
       - "9092:9092"
     environment:
-      # KRaft identity & roles
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
-
-      # Listeners: PLAINTEXT for clients, CONTROLLER for internal Raft consensus
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
-
-      # Single-node quorum — this broker is its own controller
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
-
-      # Single-replica topics (fine for single-node dev)
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-
-      # Auto-create topics used by the notification system
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-
-      # Fixed base64-encoded cluster UUID (required for KRaft)
-      # Generate a fresh one with:
-      #   docker run --rm confluentinc/cp-kafka:7.7.0 kafka-storage random-uuid
       CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
     healthcheck:
       test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
@@ -83,58 +54,7 @@ services:
       retries: 10
       start_period: 40s
 
-  # ── Backend (Express + Mongoose + Redis + Kafka) ──────────────────────────
-  backend:
-    build:
-      context: ./Backend
-      dockerfile: Dockerfile
-    container_name: ns_backend
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    # Load secrets from the existing .env file (Atlas MONGO_URI, JWT_SECRET, ENCRYPTION_KEY, etc.)
-    env_file:
-      - ./Backend/.env
-    # Only add vars not already in .env
-    environment:
-      REDIS_URL: redis://redis:6379
-      KAFKA_BROKERS: kafka:9092
-      PORT: 3000
-      # Match local dev timezone so naive datetime strings are parsed correctly.
-      TZ: Asia/Kolkata
-    depends_on:
-      mongo:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-
-  # ── Frontend (Vite React → Nginx) ────────────────────────────────────────
-  frontend:
-    build:
-      context: ./Frontend
-      dockerfile: Dockerfile
-      args:
-        # Browser talks to backend via host port (not docker-internal name)
-        VITE_API_BASE_URL: http://localhost:3000
-    container_name: ns_frontend
-    restart: unless-stopped
-    ports:
-      - "5173:80"
-    depends_on:
-      - backend
-
-  # ── Kafka UI — visual dashboard for topics & messages ────────────────────
-  # Browse: http://localhost:8080
-  # See live messages flowing through campaign.trigger and delivery.report.
-  # Interview demo: show topics, partitions, consumer group lag in real time.
+  # ── Kafka UI ─────────────────────────────────────────────────────────────────
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: ns_kafka_ui
@@ -144,15 +64,174 @@ services:
     environment:
       KAFKA_CLUSTERS_0_NAME: local-kraft
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
-      # Show topic messages in the UI (not just metadata)
-      KAFKA_CLUSTERS_0_AUDIT_TOPICAUDITENABLED: "false"
       DYNAMIC_CONFIG_ENABLED: "true"
     depends_on:
       kafka:
         condition: service_healthy
 
+  # ── API Gateway (Nginx) ───────────────────────────────────────────────────
+  api-gateway:
+    image: nginx:alpine
+    container_name: ns_gateway
+    restart: unless-stopped
+    ports:
+      - "3000:80"    # port 3000 so frontend VITE_API_BASE_URL=http://localhost:3000 still works
+    volumes:
+      - ./services/api-gateway/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - auth-service
+      - user-service
+      - template-service
+      - audience-service
+      - campaign-service
+      - connection-service
 
-# ── Volumes ──────────────────────────────────────────────────────────────────
-volumes:
-  mongo_data:
-    driver: local
+  # ── Auth Service (3001) ───────────────────────────────────────────────────
+  auth-service:
+    build:
+      context: ./services
+      dockerfile: auth-service/Dockerfile
+    container_name: ns_auth
+    restart: unless-stopped
+    env_file: ./.env
+    environment:
+      PORT: 3001
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ── User Service (3002) ───────────────────────────────────────────────────
+  user-service:
+    build:
+      context: ./services
+      dockerfile: user-service/Dockerfile
+    container_name: ns_user
+    restart: unless-stopped
+    env_file: ./.env
+    environment:
+      PORT: 3002
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3002/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ── Template Service (3003) ───────────────────────────────────────────────
+  template-service:
+    build:
+      context: ./services
+      dockerfile: template-service/Dockerfile
+    container_name: ns_template
+    restart: unless-stopped
+    env_file: ./.env
+    environment:
+      PORT: 3003
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3003/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ── Audience Service (3004) ───────────────────────────────────────────────
+  audience-service:
+    build:
+      context: ./services
+      dockerfile: audience-service/Dockerfile
+    container_name: ns_audience
+    restart: unless-stopped
+    env_file: ./.env
+    environment:
+      PORT: 3004
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3004/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ── Campaign Service (3005) ───────────────────────────────────────────────
+  campaign-service:
+    build:
+      context: ./services
+      dockerfile: campaign-service/Dockerfile
+    container_name: ns_campaign
+    restart: unless-stopped
+    env_file: ./.env
+    environment:
+      PORT: 3005
+    depends_on:
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3005/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ── Connection Service (3006) ─────────────────────────────────────────────
+  connection-service:
+    build:
+      context: ./services
+      dockerfile: connection-service/Dockerfile
+    container_name: ns_connection
+    restart: unless-stopped
+    env_file: ./.env
+    environment:
+      PORT: 3006
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3006/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ── Notification Dispatcher (Kafka consumer daemon) ───────────────────────
+  notification-dispatcher:
+    build:
+      context: ./services
+      dockerfile: notification-dispatcher/Dockerfile
+    container_name: ns_dispatcher
+    restart: unless-stopped
+    env_file: ./.env
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  # ── Scheduler Service (cron daemon) ──────────────────────────────────────
+  scheduler-service:
+    build:
+      context: ./services
+      dockerfile: scheduler-service/Dockerfile
+    container_name: ns_scheduler
+    restart: unless-stopped
+    env_file: ./.env
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  # ── Frontend (Vite React → Nginx) ────────────────────────────────────────
+  frontend:
+    build:
+      context: ./Frontend
+      dockerfile: Dockerfile
+      args:
+        # Gateway is on port 3000 → same URL as before, zero frontend changes needed
+        VITE_API_BASE_URL: http://localhost:3000
+    container_name: ns_frontend
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      - api-gateway
