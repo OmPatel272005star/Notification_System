@@ -1,5 +1,8 @@
 import nodemailer from 'nodemailer';
 import Connection, { encryptSecret, decryptSecret, maskSecret } from '../shared/models/Connection.js';
+import { createLogger } from '../shared/utils/logger.js';
+
+const logger = createLogger('connection-service');
 
 function toPublic(conn) {
   const obj = conn.toObject ? conn.toObject() : { ...conn };
@@ -47,8 +50,9 @@ export const createConnection = async (req, res) => {
       smtp_user: provider === 'smtp' ? smtp_user.trim() : '', smtp_pass: provider === 'smtp' ? encryptSecret(smtp_pass) : '',
       smtp_secure: provider === 'smtp' ? Boolean(smtp_secure) : false, created_by: req.user.id,
     });
+    logger.info('connection created', { connectionId: conn._id, provider, userId: req.user.id });
     return res.status(201).json({ success: true, data: toPublic(conn) });
-  } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { logger.error('createConnection error', { error: err.message }); return res.status(500).json({ success: false, message: err.message }); }
 };
 
 export const getAllConnections = async (req, res) => {
@@ -108,8 +112,10 @@ export const testConnection = async (req, res) => {
     });
     conn.last_tested_at = new Date(); conn.last_test_status = 'ok';
     await conn.save();
+    logger.info('connection test passed', { connectionId: req.params.id, toEmail, provider: conn.provider });
     return res.status(200).json({ success: true, message: `Test email sent to ${toEmail}.`, data: toPublic(conn) });
   } catch (err) {
+    logger.error('connection test failed', { connectionId: req.params.id, error: err.message });
     await Connection.findByIdAndUpdate(req.params.id, { last_tested_at: new Date(), last_test_status: 'failed' }).catch(() => {});
     return res.status(400).json({ success: false, message: `Connection test failed: ${err.message}` });
   }

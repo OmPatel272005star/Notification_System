@@ -1,6 +1,9 @@
 import bcrypt from "bcryptjs";
 import User   from "../shared/models/User.js";
 import { redis } from "../shared/config/redis.js";
+import { createLogger } from "../shared/utils/logger.js";
+
+const logger = createLogger('user-service');
 
 const USER_CACHE_TTL = 300;
 const LIST_CACHE_TTL = 60;
@@ -21,7 +24,7 @@ export const getUserById = async (req, res) => {
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
     await redis.set(cacheKey, JSON.stringify(user), 'EX', USER_CACHE_TTL);
     return res.status(200).json({ success: true, data: user });
-  } catch { return res.status(500).json({ success: false, message: "Internal Server Error" }); }
+  } catch (err) { logger.error('getUserById error', { userId: req.params.id, error: err.message }); return res.status(500).json({ success: false, message: "Internal Server Error" }); }
 };
 
 export const getBulkUser = async (req, res) => {
@@ -38,7 +41,7 @@ export const getBulkUser = async (req, res) => {
       pagination: { page, limit, totalCount, totalPages, hasNextPage: page < totalPages } };
     await redis.set(cacheKey, JSON.stringify(payload), 'EX', LIST_CACHE_TTL);
     return res.status(200).json(payload);
-  } catch { return res.status(500).json({ success: false, message: "Internal Server Error" }); }
+  } catch (err) { logger.error('getBulkUser error', { error: err.message }); return res.status(500).json({ success: false, message: "Internal Server Error" }); }
 };
 
 export const addUser = async (req, res) => {
@@ -51,8 +54,9 @@ export const addUser = async (req, res) => {
     const password_hash = await bcrypt.hash(password, salt);
     const user = await User.create({ display_name: display_name?.trim() || email.split("@")[0], email: email.toLowerCase().trim(), password_hash, role: role || "viewer" });
     await invalidateListCache();
+    logger.info('user created by admin', { newUserId: user._id, email: user.email, byUserId: req.user?.id });
     return res.status(201).json({ success: true, message: "User added successfully", data: user });
-  } catch { return res.status(500).json({ success: false, message: "Internal Server Error" }); }
+  } catch (err) { logger.error('addUser error', { error: err.message }); return res.status(500).json({ success: false, message: "Internal Server Error" }); }
 };
 
 export const deleteUser = async (req, res) => {
@@ -62,8 +66,9 @@ export const deleteUser = async (req, res) => {
     if (!deletedUser) return res.status(404).json({ success: false, message: "User not found" });
     await redis.del(userCacheKey(id));
     await invalidateListCache();
+    logger.info('user deleted', { deletedUserId: id, byUserId: req.user?.id });
     return res.status(200).json({ success: true, message: "User deleted successfully", data: deletedUser });
-  } catch { return res.status(500).json({ success: false, message: "Internal Server Error" }); }
+  } catch (err) { logger.error('deleteUser error', { userId: req.params.id, error: err.message }); return res.status(500).json({ success: false, message: "Internal Server Error" }); }
 };
 
 export const updateUser = async (req, res) => {
@@ -74,8 +79,9 @@ export const updateUser = async (req, res) => {
     if (!updatedUser) return res.status(404).json({ success: false, message: "User not found" });
     await redis.del(userCacheKey(id));
     await invalidateListCache();
+    logger.info('user updated', { userId: id, byUserId: req.user?.id });
     return res.status(200).json({ success: true, message: "User updated successfully", data: updatedUser });
-  } catch { return res.status(500).json({ success: false, message: "Internal Server Error" }); }
+  } catch (err) { logger.error('updateUser error', { userId: req.params.id, error: err.message }); return res.status(500).json({ success: false, message: "Internal Server Error" }); }
 };
 
 export const toggleStatus = async (req, res) => {
@@ -88,6 +94,7 @@ export const toggleStatus = async (req, res) => {
     if (!updatedUser) return res.status(404).json({ success: false, message: "User not found" });
     await redis.del(userCacheKey(id));
     await invalidateListCache();
+    logger.info('user status toggled', { userId: id, status, byUserId: req.user?.id });
     return res.status(200).json({ success: true, message: "Status updated", data: updatedUser });
-  } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { logger.error('toggleStatus error', { userId: req.params.id, error: err.message }); return res.status(500).json({ success: false, message: err.message }); }
 };

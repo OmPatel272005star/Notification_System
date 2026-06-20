@@ -3,6 +3,9 @@ import jwt    from "jsonwebtoken";
 import User   from "../shared/models/User.js";
 import { generateToken } from "../shared/config/jwt.js";
 import { redis }         from "../shared/config/redis.js";
+import { createLogger }  from "../shared/utils/logger.js";
+
+const logger = createLogger('auth-service');
 
 export const signup = async (req, res) => {
   try {
@@ -19,9 +22,11 @@ export const signup = async (req, res) => {
     const user          = await User.create({ display_name: display_name.trim(), email: email.toLowerCase().trim(), password_hash, role: role || "viewer" });
     const token         = generateToken(user);
 
+    logger.info('user signed up', { userId: user._id, email: user.email, role: user.role });
     return res.status(201).json({ success: true, message: "Account created successfully",
       data: { token, user: { id: user._id, display_name: user.display_name, email: user.email, role: user.role, status: user.status } } });
   } catch (err) {
+    logger.error('signup error', { error: err.message });
     return res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 };
@@ -42,9 +47,11 @@ export const login = async (req, res) => {
     await User.findByIdAndUpdate(user._id, { last_login_at: new Date() });
     const token = generateToken(user);
 
+    logger.info('user logged in', { userId: user._id, email: user.email, role: user.role });
     return res.status(200).json({ success: true, message: "Login successful",
       data: { token, user: { id: user._id, display_name: user.display_name, email: user.email, role: user.role, status: user.status } } });
   } catch (err) {
+    logger.error('login error', { error: err.message });
     return res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 };
@@ -58,8 +65,10 @@ export const logout = async (req, res) => {
     try { const d = jwt.decode(token); if (d?.exp) ttl = Math.max(1, d.exp - Math.floor(Date.now() / 1000)); } catch {}
 
     await redis.set(`blocked:${token}`, '1', 'EX', ttl);
+    logger.info('user logged out', { userId: req.user?.id });
     return res.status(200).json({ success: true, message: 'Logged out successfully.' });
   } catch (err) {
+    logger.error('logout error', { error: err.message });
     return res.status(500).json({ success: false, message: 'Internal Server Error' });
   }
 };

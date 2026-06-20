@@ -4,6 +4,9 @@ dotenv.config();
 import connectDB               from './shared/config/db.js';
 import { connectProducer, producer } from './shared/config/kafka.js';
 import Campaign from './shared/models/Campaign.js';
+import { createLogger } from './shared/utils/logger.js';
+
+const logger = createLogger('scheduler-service');
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 await connectDB();
@@ -26,7 +29,7 @@ async function kafkaEmitTrigger(campaign, triggerType) {
     topic: 'campaign.trigger',
     messages: [{ key: campaign._id.toString(), value: JSON.stringify({ campaignId: campaign._id, triggerType }) }],
   });
-  console.log(`[scheduler] 📤 campaign.trigger emitted — "${campaign.name}" (${campaign._id}) type=${triggerType}`);
+  logger.info('campaign.trigger emitted', { campaignId: campaign._id, campaignName: campaign.name, triggerType });
 }
 
 // ── One-time campaigns ────────────────────────────────────────────────────────
@@ -37,7 +40,7 @@ async function runScheduledCampaigns() {
     'publish_details.scheduled_at': { $lte: now },
   });
   if (!due.length) return;
-  console.log(`[scheduler] one-time: ${now.toISOString()} — ${due.length} campaign(s) due`);
+  logger.info('one-time campaigns due', { count: due.length, timestamp: now.toISOString() });
   for (const campaign of due) {
     try {
       campaign.schedule_status = 'live';
@@ -46,9 +49,9 @@ async function runScheduledCampaigns() {
       campaign.schedule_status = 'completed';
       campaign.publish_details.published_at = new Date();
       await campaign.save();
-      console.log(`[scheduler] ✅ One-time "${campaign.name}" — trigger emitted, marked completed.`);
+      logger.info('one-time campaign completed', { campaignId: campaign._id, campaignName: campaign.name });
     } catch (err) {
-      console.error(`[scheduler] Error: campaign ${campaign._id}:`, err.message);
+      logger.error('one-time campaign error', { campaignId: campaign._id, error: err.message });
       try { await Campaign.findByIdAndUpdate(campaign._id, { schedule_status: 'scheduled' }); } catch {}
     }
   }
@@ -62,7 +65,7 @@ async function runPeriodicCampaigns() {
     'periodic_settings.next_run_at': { $lte: now },
   });
   if (!due.length) return;
-  console.log(`[scheduler] periodic: ${now.toISOString()} — ${due.length} campaign(s) due`);
+  logger.info('periodic campaigns due', { count: due.length, timestamp: now.toISOString() });
   for (const campaign of due) {
     try {
       campaign.schedule_status = 'live';
@@ -78,16 +81,16 @@ async function runPeriodicCampaigns() {
       if (isDone) {
         campaign.schedule_status = 'completed';
         campaign.publish_details.published_at = now;
-        console.log(`[scheduler] Periodic "${campaign.name}" completed after ${ps.occurrences_run} run(s).`);
+        logger.info('periodic campaign completed', { campaignId: campaign._id, runs: ps.occurrences_run });
       } else {
         ps.next_run_at           = nextRunAt;
         campaign.schedule_status = 'scheduled';
-        console.log(`[scheduler] Periodic "${campaign.name}" run #${ps.occurrences_run} queued. Next: ${nextRunAt.toISOString()}`);
+        logger.info('periodic campaign queued', { campaignId: campaign._id, run: ps.occurrences_run, nextRunAt: nextRunAt.toISOString() });
       }
       campaign.markModified('periodic_settings');
       await campaign.save();
     } catch (err) {
-      console.error(`[scheduler] Error: periodic campaign ${campaign._id}:`, err.message);
+      logger.error('periodic campaign error', { campaignId: campaign._id, error: err.message });
       try { await Campaign.findByIdAndUpdate(campaign._id, { schedule_status: 'scheduled' }); } catch {}
     }
   }
@@ -99,16 +102,16 @@ const tick = async () => {
     await runScheduledCampaigns();
     await runPeriodicCampaigns();
   } catch (err) {
-    console.error('[scheduler] Unhandled tick error:', err.message);
+    logger.error('unhandled tick error', { error: err.message });
   }
 };
 
 setInterval(tick, 60 * 1000);
-console.log('🕐 [scheduler-service] Campaign scheduler started — checking every minute.');
+logger.info('scheduler-service started — checking every 60s');
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
 const shutdown = async (sig) => {
-  console.log(`[scheduler-service] ${sig} — shutting down`);
+  logger.info(`${sig} received — shutting down`);
   await producer.disconnect();
   process.exit(0);
 };

@@ -10,7 +10,10 @@ import Connection  from './shared/models/Connection.js';
 import Template    from './shared/models/Template.js';
 import Audience    from './shared/models/Audience.js';
 import { decryptSecret } from './shared/utils/encryption.js';
+import { createLogger }  from './shared/utils/logger.js';
 import nodemailer  from 'nodemailer';
+
+const logger = createLogger('notification-dispatcher');
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 await connectDB();
@@ -56,16 +59,16 @@ function personalise(htmlBody, contact, email) {
 // ── Delivery report emitter ───────────────────────────────────────────────────
 async function emitDeliveryReport(payload) {
   await producer.send({ topic: 'delivery.report', messages: [{ value: JSON.stringify(payload) }] });
-  console.log(`[dispatcher] 📤 delivery.report — campaign=${payload.campaignId} status=${payload.status}`);
+  logger.info('delivery.report emitted', { campaignId: payload.campaignId, status: payload.status });
 }
 
 // ── campaign.trigger handler ──────────────────────────────────────────────────
 async function handleCampaignTrigger(messageValue) {
   const { campaignId, triggeredBy, triggerType } = JSON.parse(messageValue);
-  console.log(`[dispatcher] 📬 campaign.trigger received — campaignId=${campaignId} type=${triggerType} by=${triggeredBy || 'scheduler'}`);
+  logger.info('campaign.trigger received', { campaignId, triggerType, triggeredBy: triggeredBy || 'scheduler' });
 
   const campaign = await Campaign.findById(campaignId);
-  if (!campaign) { console.error(`[dispatcher] Campaign ${campaignId} not found — skipping.`); return; }
+  if (!campaign) { logger.error('campaign not found', { campaignId }); return; }
 
   const [conn, template] = await Promise.all([
     Connection.findById(campaign.connection_id),
@@ -75,31 +78,35 @@ async function handleCampaignTrigger(messageValue) {
     ? await Audience.find({ _id: { $in: campaign.audience_ids }, status: 'active' }).select('first_name last_name emails')
     : [];
 
-  if (!conn)    { console.error(`[dispatcher] No connection for campaign ${campaignId} — aborting.`); return; }
-  if (!template){ console.error(`[dispatcher] No template for campaign ${campaignId} — aborting.`); return; }
-  if (!contacts.length) { console.warn(`[dispatcher] No active contacts for campaign ${campaignId} — nothing to send.`); return; }
+  if (!conn)    { logger.error('no connection for campaign', { campaignId }); return; }
+  if (!template){ logger.error('no template for campaign',  { campaignId }); return; }
+  if (!contacts.length) { logger.warn('no active contacts for campaign', { campaignId }); return; }
 
   const htmlBody = template.content?.html_body || '';
   const subject  = campaign.email_settings?.subject || template.content?.subject || campaign.name;
-  console.log(`[dispatcher] Sending to ${contacts.length} contact(s) via "${conn.name}"`);
+  logger.info('dispatching campaign', { campaignId, contacts: contacts.length, connection: conn.name });
 
+  let sent = 0; let failed = 0;
   for (const contact of contacts) {
     const primaryEmail = contact.emails?.find(e => e.is_primary)?.email || contact.emails?.[0]?.email;
     if (!primaryEmail) {
       await emitDeliveryReport({ campaignId, contactId: contact._id, status: 'failed', error: 'No email address', timestamp: new Date().toISOString() });
+      failed++;
       continue;
     }
     const personalised = personalise(htmlBody, contact, primaryEmail);
     try {
       await sendEmailViaConnection(conn, { toEmail: primaryEmail, toName: `${contact.first_name} ${contact.last_name}`.trim(), subject, html: personalised || undefined, text: template.content?.text_preview || undefined });
-      console.log(`[dispatcher] ✅ Sent → ${primaryEmail}`);
+      logger.info('email sent', { campaignId, to: primaryEmail });
       await emitDeliveryReport({ campaignId, contactId: contact._id, status: 'sent', timestamp: new Date().toISOString() });
+      sent++;
     } catch (err) {
-      console.error(`[dispatcher] ❌ Failed → ${primaryEmail}:`, err.message);
+      logger.error('email failed', { campaignId, to: primaryEmail, error: err.message });
       await emitDeliveryReport({ campaignId, contactId: contact._id, status: 'failed', error: err.message, timestamp: new Date().toISOString() });
+      failed++;
     }
   }
-  console.log(`[dispatcher] ✅ Done processing campaign ${campaignId}`);
+  logger.info('campaign dispatch complete', { campaignId, sent, failed });
 }
 
 // ── delivery.report handler ───────────────────────────────────────────────────
@@ -117,12 +124,12 @@ async function subscribeWithRetry(consumer, topic, maxRetries = 15, delayMs = 30
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       await consumer.subscribe({ topic, fromBeginning: false });
-      console.log(`[dispatcher] ✅ Subscribed to "${topic}" (attempt ${attempt})`);
+      logger.info(`subscribed to topic`, { topic, attempt });
       return;
     } catch (err) {
       const retriable = err.type === 'UNKNOWN_TOPIC_OR_PARTITION' || err.retriable;
       if (retriable && attempt < maxRetries) {
-        console.warn(`[dispatcher] ⚠️  Subscribe to "${topic}" failed — retry ${attempt}/${maxRetries} in ${delayMs}ms`);
+        logger.warn(`subscribe failed — retrying`, { topic, attempt, maxRetries, retryInMs: delayMs });
         await new Promise(r => setTimeout(r, delayMs));
       } else { throw err; }
     }
@@ -133,26 +140,26 @@ async function subscribeWithRetry(consumer, topic, maxRetries = 15, delayMs = 30
 await subscribeWithRetry(dispatchConsumer, 'campaign.trigger');
 dispatchConsumer.run({
   eachMessage: async ({ topic, partition, message }) => {
-    console.log(`[kafka] ⬇️  EVENT RECEIVED  topic=${topic}  partition=${partition}  offset=${message.offset}`);
+    logger.info('kafka message received', { topic, partition, offset: message.offset });
     try { await handleCampaignTrigger(message.value.toString()); }
-    catch (err) { console.error('[dispatcher] campaign.trigger handler error:', err.message); }
+    catch (err) { logger.error('campaign.trigger handler error', { error: err.message }); }
   },
 });
 
 await subscribeWithRetry(deliveryConsumer, 'delivery.report');
 deliveryConsumer.run({
   eachMessage: async ({ topic, partition, message }) => {
-    console.log(`[kafka] ⬇️  EVENT RECEIVED  topic=${topic}  partition=${partition}  offset=${message.offset}`);
+    logger.info('kafka message received', { topic, partition, offset: message.offset });
     try { await handleDeliveryReport(message.value.toString()); }
-    catch (err) { console.error('[dispatcher] delivery.report handler error:', err.message); }
+    catch (err) { logger.error('delivery.report handler error', { error: err.message }); }
   },
 });
 
-console.log('🚀 [notification-dispatcher] listening on [campaign.trigger] and [delivery.report]');
+logger.info('notification-dispatcher started', { topics: ['campaign.trigger', 'delivery.report'] });
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
 const shutdown = async (sig) => {
-  console.log(`[notification-dispatcher] ${sig} received — shutting down`);
+  logger.info(`${sig} received — shutting down`);
   await dispatchConsumer.disconnect();
   await deliveryConsumer.disconnect();
   await producer.disconnect();

@@ -235,3 +235,63 @@ services:
       - "5173:80"
     depends_on:
       - api-gateway
+
+  # ── Phase 6 — Observability Stack ────────────────────────────────────────
+
+  # Loki — log storage and query engine
+  loki:
+    image: grafana/loki:3.0.0
+    container_name: ns_loki
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./services/monitoring/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # Promtail — reads Docker container stdout logs → ships to Loki
+  promtail:
+    image: grafana/promtail:3.0.0
+    container_name: ns_promtail
+    restart: unless-stopped
+    user: root
+    volumes:
+      - ./services/monitoring/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    command: -config.file=/etc/promtail/config.yml -log.level=warn
+    depends_on:
+      loki:
+        condition: service_healthy
+
+  # Grafana — log visualization dashboard (open http://localhost:9000)
+  grafana:
+    image: grafana/grafana:11.0.0
+    container_name: ns_grafana
+    restart: unless-stopped
+    ports:
+      - "9000:3000"   # open http://localhost:9000 in your browser
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin   # no login needed
+      - GF_AUTH_DISABLE_LOGIN_FORM=false
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./services/monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./services/monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      loki:
+        condition: service_healthy
+
+volumes:
+  loki_data:
+  grafana_data:

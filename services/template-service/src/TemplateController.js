@@ -1,4 +1,7 @@
 import Template from '../shared/models/Template.js';
+import { createLogger } from '../shared/utils/logger.js';
+
+const logger = createLogger('template-service');
 
 const CHANNEL_MAP = {
   'email':'email','sms':'sms','whatsapp':'whatsapp',
@@ -16,7 +19,7 @@ export const getAllTemplates = async (req, res) => {
       .populate('edit_history.edited_by','display_name email')
       .sort({ createdAt: -1 });
     return res.status(200).json({ success: true, data: templates });
-  } catch { return res.status(500).json({ success: false, message: 'Internal server error' }); }
+  } catch (err) { logger.error('getAllTemplates error', { error: err.message }); return res.status(500).json({ success: false, message: 'Internal server error' }); }
 };
 
 export const getTemplateById = async (req, res) => {
@@ -28,7 +31,7 @@ export const getTemplateById = async (req, res) => {
     if (req.user.role !== 'admin' && !template.visible_to.includes('all'))
       return res.status(403).json({ success: false, message: 'Access denied' });
     return res.status(200).json({ success: true, data: template });
-  } catch { return res.status(500).json({ success: false, message: 'Internal server error' }); }
+  } catch (err) { logger.error('getTemplateById error', { templateId: req.params.id, error: err.message }); return res.status(500).json({ success: false, message: 'Internal server error' }); }
 };
 
 export const createTemplate = async (req, res) => {
@@ -43,8 +46,9 @@ export const createTemplate = async (req, res) => {
       edit_history: [{ edited_by: req.user.id, edited_at: new Date(), change_note: 'Template created' }],
     });
     await template.populate('created_by','display_name email');
+    logger.info('template created', { templateId: template._id, name: template.name, userId: req.user.id });
     return res.status(201).json({ success: true, message: 'Template created successfully', data: template });
-  } catch { return res.status(500).json({ success: false, message: 'Internal server error' }); }
+  } catch (err) { logger.error('createTemplate error', { error: err.message }); return res.status(500).json({ success: false, message: 'Internal server error' }); }
 };
 
 export const updateTemplate = async (req, res) => {
@@ -67,16 +71,18 @@ export const updateTemplate = async (req, res) => {
     const updated = await Template.findByIdAndUpdate(req.params.id, { $set: set, $push: { edit_history: historyEntry } }, { new: true })
       .populate('created_by','display_name email').populate('edit_history.edited_by','display_name email');
     if (!updated) return res.status(404).json({ success: false, message: 'Template not found' });
+    logger.info('template updated', { templateId: req.params.id, userId: req.user.id });
     return res.status(200).json({ success: true, message: 'Template updated successfully', data: updated });
-  } catch { return res.status(500).json({ success: false, message: 'Internal server error' }); }
+  } catch (err) { logger.error('updateTemplate error', { templateId: req.params.id, error: err.message }); return res.status(500).json({ success: false, message: 'Internal server error' }); }
 };
 
 export const deleteTemplate = async (req, res) => {
   try {
     const deleted = await Template.findByIdAndDelete(req.params.id);
     if (!deleted) return res.status(404).json({ success: false, message: 'Template not found' });
+    logger.info('template deleted', { templateId: req.params.id, userId: req.user.id });
     return res.status(200).json({ success: true, message: 'Template deleted successfully' });
-  } catch { return res.status(500).json({ success: false, message: 'Internal server error' }); }
+  } catch (err) { logger.error('deleteTemplate error', { templateId: req.params.id, error: err.message }); return res.status(500).json({ success: false, message: 'Internal server error' }); }
 };
 
 export const duplicateTemplate = async (req, res) => {
@@ -90,6 +96,7 @@ export const duplicateTemplate = async (req, res) => {
       edit_history: [{ edited_by: req.user.id, edited_at: new Date(), change_note: `Duplicated from "${source.name}"` }],
     });
     await copy.populate('created_by','display_name email');
+    logger.info('template duplicated', { sourceId: req.params.id, newId: copy._id, userId: req.user.id });
     return res.status(201).json({ success: true, message: 'Template duplicated successfully', data: copy });
-  } catch { return res.status(500).json({ success: false, message: 'Internal server error' }); }
+  } catch (err) { logger.error('duplicateTemplate error', { templateId: req.params.id, error: err.message }); return res.status(500).json({ success: false, message: 'Internal server error' }); }
 };

@@ -1,5 +1,8 @@
 import Campaign   from '../shared/models/Campaign.js';
 import { producer } from '../shared/config/kafka.js';
+import { createLogger } from '../shared/utils/logger.js';
+
+const logger = createLogger('campaign-service');
 
 const POPULATE_OPTS = [
   { path: 'template_id',   select: 'name channel_type status' },
@@ -18,8 +21,9 @@ export const createCampaign = async (req, res) => {
       audience_ids: audience_ids || [], visible_to: visible_to || ['all'], editable_by: editable_by || ['admin'],
       schedule_type: schedule_type || 'one_time', created_by: req.user.id });
     const populated = await Campaign.findById(campaign._id).populate(POPULATE_OPTS);
+    logger.info('campaign created', { campaignId: campaign._id, name: campaign.name, channel_type, userId: req.user.id });
     return res.status(201).json({ success: true, data: populated });
-  } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { logger.error('createCampaign error', { error: err.message, userId: req.user?.id }); return res.status(500).json({ success: false, message: err.message }); }
 };
 
 export const getAllCampaigns = async (req, res) => {
@@ -54,8 +58,9 @@ export const updateCampaign = async (req, res) => {
       .forEach((k) => { if (req.body[k] !== undefined) campaign[k] = req.body[k]; });
     await campaign.save();
     const populated = await Campaign.findById(campaign._id).populate(POPULATE_OPTS);
+    logger.info('campaign updated', { campaignId: campaign._id, userId: req.user.id });
     return res.status(200).json({ success: true, data: populated });
-  } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { logger.error('updateCampaign error', { campaignId: req.params.id, error: err.message }); return res.status(500).json({ success: false, message: err.message }); }
 };
 
 export const deleteCampaign = async (req, res) => {
@@ -63,8 +68,9 @@ export const deleteCampaign = async (req, res) => {
     const campaign = await Campaign.findById(req.params.id);
     if (!campaign) return res.status(404).json({ success: false, message: 'Campaign not found.' });
     await campaign.deleteOne();
+    logger.info('campaign deleted', { campaignId: req.params.id, name: campaign.name, userId: req.user.id });
     return res.status(200).json({ success: true, message: 'Campaign deleted.' });
-  } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { logger.error('deleteCampaign error', { campaignId: req.params.id, error: err.message }); return res.status(500).json({ success: false, message: err.message }); }
 };
 
 export const duplicateCampaign = async (req, res) => {
@@ -121,8 +127,9 @@ export const publishCampaign = async (req, res) => {
     campaign.schedule_status = campaign.schedule_type === 'periodic' ? 'scheduled'
       : (new Date(campaign.publish_details.scheduled_at) > now ? 'scheduled' : 'completed');
     await campaign.save();
+    logger.info('campaign published', { campaignId: campaign._id, name: campaign.name, schedule_type: campaign.schedule_type, schedule_status: campaign.schedule_status, userId: req.user.id });
     return res.status(200).json({ success: true, data: await Campaign.findById(campaign._id).populate(POPULATE_OPTS) });
-  } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { logger.error('publishCampaign error', { campaignId: req.params.id, error: err.message }); return res.status(500).json({ success: false, message: err.message }); }
 };
 
 export const sendCampaign = async (req, res) => {
@@ -139,7 +146,7 @@ export const sendCampaign = async (req, res) => {
       value: JSON.stringify({ campaignId: campaign._id, triggeredBy: req.user.id, triggerType: 'manual' }),
     }] });
 
-    console.log(`[campaign-service] 📤 campaign.trigger emitted — campaignId=${campaign._id}`);
+    logger.info('campaign.trigger emitted', { campaignId: campaign._id, triggeredBy: req.user.id, triggerType: 'manual' });
     return res.status(202).json({ success: true, message: 'Campaign queued for dispatch. Emails will be sent asynchronously.', data: { campaignId: campaign._id, status: 'queued' } });
-  } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { logger.error('sendCampaign error', { campaignId: req.params.id, error: err.message }); return res.status(500).json({ success: false, message: err.message }); }
 };
