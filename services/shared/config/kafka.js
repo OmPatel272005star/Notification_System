@@ -22,9 +22,24 @@ function kafkaLogger(level) {
   };
 }
 
+// ── SASL/SSL config for Upstash Kafka (production) ───────────────────────────
+// When KAFKA_USERNAME is set (Railway/Upstash), use SASL + SSL.
+// When not set (local Docker KRaft), plain connection is used.
+const saslConfig = process.env.KAFKA_USERNAME
+  ? {
+      ssl: true,
+      sasl: {
+        mechanism: process.env.KAFKA_SASL_MECHANISM || 'scram-sha-256',
+        username:  process.env.KAFKA_USERNAME,
+        password:  process.env.KAFKA_PASSWORD,
+      },
+    }
+  : {};
+
 export const kafka = new Kafka({
   clientId:   process.env.KAFKA_CLIENT_ID || 'notification-system',
   brokers,
+  ...saslConfig,
   logLevel:   logLevel.INFO,
   logCreator: () => kafkaLogger,
   retry: { initialRetryTime: 300, retries: 5 },
