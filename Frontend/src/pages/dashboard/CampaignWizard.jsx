@@ -12,14 +12,14 @@ import { getAllUsers }    from "../../services/userService";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const CHANNELS = [
-  { name: "Email",           icon: Mail,          color: "emerald" },
-  { name: "WhatsApp",        icon: MessageCircle, color: "violet" },
-  { name: "SMS",             icon: MessageSquare, color: "blue" },
-  { name: "In-App Messaging",icon: Bell,          color: "indigo" },
-  { name: "Mobile Push",     icon: Smartphone,    color: "teal" },
-  { name: "RCS",             icon: Radio,         color: "orange" },
-  { name: "MMS",             icon: Layers,        color: "pink" },
-  { name: "Web Push",        icon: Globe,         color: "gray" },
+  { name: "Email",           icon: Mail,          color: "emerald", available: true  },
+  { name: "WhatsApp",        icon: MessageCircle, color: "violet",  available: false },
+  { name: "SMS",             icon: MessageSquare, color: "blue",    available: false },
+  { name: "In-App Messaging",icon: Bell,          color: "indigo",  available: false },
+  { name: "Mobile Push",     icon: Smartphone,    color: "teal",    available: false },
+  { name: "RCS",             icon: Radio,         color: "orange",  available: false },
+  { name: "MMS",             icon: Layers,        color: "pink",    available: false },
+  { name: "Web Push",        icon: Globe,         color: "gray",    available: false },
 ];
 
 const STEPS = ["Type", "Details", "Template", "Settings", "Audience", "Summary"];
@@ -104,22 +104,38 @@ function Step1({ form, set }) {
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Select the channel for this campaign.</p>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {CHANNELS.map(({ name, icon: Icon }) => {
+        {CHANNELS.map(({ name, icon: Icon, available }) => {
           const selected = form.type === name;
           return (
-            <button key={name} type="button" onClick={() => set("type", name)}
+            <button key={name} type="button"
+              onClick={() => available && set("type", name)}
+              disabled={!available}
+              title={!available ? `${name} — currently not available` : undefined}
               className={`relative flex flex-col items-center gap-2.5 p-4 rounded-xl border-2 transition-all ${
-                selected
+                !available
+                  ? "border-[#E4E7EC] dark:border-[#2A2F3A] bg-gray-50 dark:bg-[#0A0D12] opacity-50 cursor-not-allowed"
+                  : selected
                   ? "border-[#6D5EF5] bg-[#6D5EF5]/8 dark:bg-[#6D5EF5]/10"
                   : "border-[#E4E7EC] dark:border-[#2A2F3A] hover:border-[#6D5EF5]/40 bg-white dark:bg-[#0F1117]"
               }`}>
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${selected ? "bg-[#6D5EF5]" : "bg-gray-100 dark:bg-gray-800"}`}>
-                <Icon className={`w-5 h-5 ${selected ? "text-white" : "text-gray-500 dark:text-gray-400"}`} />
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                !available ? "bg-gray-100 dark:bg-gray-800" : selected ? "bg-[#6D5EF5]" : "bg-gray-100 dark:bg-gray-800"
+              }`}>
+                <Icon className={`w-5 h-5 ${
+                  !available ? "text-gray-400 dark:text-gray-600" : selected ? "text-white" : "text-gray-500 dark:text-gray-400"
+                }`} />
               </div>
-              <span className={`text-xs font-medium text-center leading-tight ${selected ? "text-[#6D5EF5]" : "text-gray-700 dark:text-gray-300"}`}>
+              <span className={`text-xs font-medium text-center leading-tight ${
+                !available ? "text-gray-400 dark:text-gray-600" : selected ? "text-[#6D5EF5]" : "text-gray-700 dark:text-gray-300"
+              }`}>
                 {name}
               </span>
-              {selected && (
+              {!available && (
+                <span className="text-[9px] text-gray-400 dark:text-gray-600 text-center leading-tight -mt-1">
+                  currently not available
+                </span>
+              )}
+              {available && selected && (
                 <div className="absolute top-2 right-2 w-4 h-4 rounded-full bg-[#6D5EF5] flex items-center justify-center">
                   <Check className="w-2.5 h-2.5 text-white" />
                 </div>

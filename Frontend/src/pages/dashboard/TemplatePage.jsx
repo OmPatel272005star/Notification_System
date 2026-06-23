@@ -4,7 +4,16 @@ import { Search, LayoutGrid, List, MoreVertical, Edit3, Copy, Trash2, Plus, X, C
 import { useTemplates } from "../../context/TemplateContext";
 import { useToast } from "../../hooks/useToast";
 
-const CHANNELS = ["Email", "WhatsApp", "SMS", "In-App Messaging", "Mobile Push", "RCS", "MMS", "Web Push"];
+const CHANNELS = [
+  { name: "Email",            available: true  },
+  { name: "WhatsApp",         available: false },
+  { name: "SMS",              available: false },
+  { name: "In-App Messaging", available: false },
+  { name: "Mobile Push",      available: false },
+  { name: "RCS",              available: false },
+  { name: "MMS",              available: false },
+  { name: "Web Push",         available: false },
+];
 const VISIBLE_TO_OPTIONS = ["All Users", "Admin", "Marketing Team", "Dev Team"];
 
 const CHANNEL_COLORS = {
@@ -101,11 +110,22 @@ function AddNewDropdown({ onSelect }) {
         <Plus className="w-4 h-4" /> Add New <ChevronDown className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
-        <div className="absolute right-0 top-12 z-50 w-52 bg-white dark:bg-[#1A2030] border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-xl shadow-2xl overflow-hidden animate-fade-in">
-          {CHANNELS.map(ch => (
-            <button key={ch} onClick={() => { setOpen(false); onSelect(ch); }}
-              className="w-full text-left px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#222B3A] transition-colors">
-              {ch}
+        <div className="absolute right-0 top-12 z-50 w-64 bg-white dark:bg-[#1A2030] border border-[#E4E7EC] dark:border-[#2A2F3A] rounded-xl shadow-2xl overflow-hidden animate-fade-in">
+          {CHANNELS.map(({ name, available }) => (
+            <button key={name}
+              onClick={() => { if (!available) return; setOpen(false); onSelect(name); }}
+              disabled={!available}
+              className={`w-full flex items-center justify-between px-4 py-2.5 text-sm transition-colors ${
+                available
+                  ? "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#222B3A] cursor-pointer"
+                  : "text-gray-400 dark:text-gray-600 cursor-not-allowed"
+              }`}>
+              <span>{name}</span>
+              {!available && (
+                <span className="text-[10px] italic text-gray-400 dark:text-gray-600 ml-2 flex-shrink-0">
+                  currently not available
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -237,7 +257,11 @@ function TemplateDialog({ open, onClose, initial, initialChannel }) {
             <div>
               <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">Channel <span className="text-red-400">*</span></label>
               <select value={form.channel} onChange={e => set("channel", e.target.value)} className={inputCls}>
-                {CHANNELS.map(c => <option key={c} value={c}>{c}</option>)}
+                {CHANNELS.map(({ name, available }) => (
+                  <option key={name} value={name} disabled={!available}>
+                    {available ? name : `${name} (currently not available)`}
+                  </option>
+                ))}
               </select>
             </div>
             {/* Visible To */}
